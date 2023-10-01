@@ -7,6 +7,7 @@ use crate::read_venn_timestamp;
 use super::vennbase::{VennTimestamp, FileInformation};
 
 // Each partition contains multiple files of the same type
+#[derive(Debug)]
 pub struct Partition {
     files: Vec<FileInformation>,
     created_at: VennTimestamp,

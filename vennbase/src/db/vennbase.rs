@@ -1,16 +1,20 @@
 use core::panic;
 use std::collections::HashMap;
-use std::io::{self, prelude::*, BufReader};
-use std::fs::{self, File};
+use std::io;
+use std::fs;
 use std::path::PathBuf;
+
+use chrono::format;
 
 use super::partition::Partition;
 
+#[derive(Debug)]
 pub struct FileInformation {
     start: usize,
     size: usize,
 }
 
+#[derive(Debug)]
 pub struct VennTimestamp(pub i64);
 
 impl VennTimestamp {
@@ -24,12 +28,6 @@ impl VennTimestamp {
 #[derive(Eq, Hash, PartialEq)]
 pub struct MimeType(String);
 
-impl From<String> for MimeType {
-    fn from(s: String) -> Self {
-        MimeType(s)
-    }
-}
-
 impl MimeType {
     fn from_pathname(path: &PathBuf) -> io::Result<Self> {
         let path = path.to_str().ok_or(
@@ -37,6 +35,18 @@ impl MimeType {
         )?.to_string();
 
         Ok(MimeType(path))
+    }
+}
+
+impl std::fmt::Debug for MimeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(format!("MimeType({})", self.0).as_str())
+    }
+}
+
+impl From<String> for MimeType {
+    fn from(s: String) -> Self {
+        MimeType(s)
     }
 }
 
@@ -68,6 +78,8 @@ impl Vennbase {
     pub fn save_record(&mut self, mimetype: &str, data: &[u8]) {
         let partition = self.get_or_create_partition(mimetype);
         let uuid = uuid::Uuid::new_v4().to_string();
+
+        println!("{:#?}", self.partitions);
 
         println!("Saving record {uuid} with type '{}': {:#?}", mimetype, data.len())
     }
