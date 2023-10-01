@@ -5,6 +5,10 @@ edition = "2021"
 
 [dependencies]
 
+[dependencies.chrono]
+version = "0.4.31"
+features = ["alloc", "std", "clock"]
+
 [dependencies.uuid]
 version = "1.4.1"
 features = ["v4", "fast-rng", "macro-diagnostics"]
