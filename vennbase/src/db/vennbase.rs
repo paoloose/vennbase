@@ -15,36 +15,44 @@ pub struct VennTimestamp(i64);
 
 impl VennTimestamp {
     fn now() -> Self {
-        use std::time::UNIX_EPOCH;
-        VennTimestamp(
-            std::time::Instant::now().duration_since(UNIX_EPOCH).as_millis()
-        )
+        use chrono::prelude::*;
+        let now = Utc::now();
+        VennTimestamp(now.timestamp_millis())
     }
 }
 
 // Each partition contains multiple files of the same type
 pub struct Partition {
-    name: String,
     files: Vec<FileInformation>,
     created_at: VennTimestamp,
     last_compaction: VennTimestamp
+}
+
+impl Default for Partition {
+    fn default() -> Self {
+        Partition {
+            files: Vec::new(),
+            created_at: VennTimestamp::now(),
+            last_compaction: VennTimestamp::now()
+        }
+    }
 }
 
 #[derive(Eq, Hash, PartialEq)]
 pub struct MimeType(String);
 
 // A database can be seen as a universe of set theory
-pub struct Database {
+pub struct Vennbase {
     path: String,
     partitions: HashMap<MimeType, Partition>
 }
 
-impl Database {
-    pub fn from_dir(path: &str) -> io::Result<Database> {
+impl Vennbase {
+    pub fn from_dir(path: &str) -> io::Result<Vennbase> {
         match fs::create_dir(path) {
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
                 return Ok(
-                    Database::parse_dir_tree(path)
+                    Vennbase::parse_dir_tree(path)
                         .expect("Malformed database directory")
                 )
             }
@@ -52,17 +60,17 @@ impl Database {
             Ok(_) => {},
         }
 
-        Ok(Database { path: path.to_owned(), partitions: HashMap::new() })
+        Ok(Vennbase { path: path.to_owned(), partitions: HashMap::new() })
     }
 
     /**
      * Saves a new record the database
      */
     pub fn save_record(&mut self, mimetype: &str, data: &[u8]) {
-        let partiition = self.partitions.get(&MimeType(mimetype.to_string()));
+        let partition = self.get_or_create_partition(mimetype);
         let uuid = uuid::Uuid::new_v4().to_string();
 
-        println!("Saving record with type '{}': {:#?}", mimetype, data.len())
+        println!("Saving record {uuid} with type '{}': {:#?}", mimetype, data.len())
     }
 
     pub fn delete_record(&mut self, id: &str) {
@@ -73,7 +81,7 @@ impl Database {
         println!("Replacing record with id: {} with data: {:#?}", id, data.len())
     }
 
-    fn parse_dir_tree(path: &str) -> io::Result<Database> {
+    fn parse_dir_tree(path: &str) -> io::Result<Vennbase> {
         let dir = fs::read_dir(path)?;
         let mut partitions: HashMap<MimeType, Partition> = HashMap::new();
 
@@ -90,7 +98,8 @@ impl Database {
             let file = File::open(path)?;
             let mut reader = BufReader::new(file);
 
-            let partition_name = read_n_bytes_as_string!(&mut reader, 32).expect("Failed to read partition name");
+            // NOTE: should we implement a partition name?
+            // let partition_name = read_n_bytes_as_string!(&mut reader, 32).expect("Failed to read partition name");
             let mimetype = read_n_bytes_as_string!(&mut reader, 255).expect("Failed to read mime type");
             let created_at = read_venn_timestamp!(&mut reader).expect("Failed to read creation timestamp");
             let last_compaction = read_venn_timestamp!(&mut reader).expect("Failed to read last compaction timestamp");
@@ -98,7 +107,6 @@ impl Database {
             partitions.insert(
                 MimeType(mimetype),
                 Partition {
-                    name: partition_name,
                     files: Vec::new(), // TODO: read existing files
                     created_at,
                     last_compaction
@@ -106,26 +114,11 @@ impl Database {
             );
         }
 
-        Ok(Database { path: path.to_owned(), partitions })
-    }
-
-    fn create_partition(&mut self, mimetype: MimeType) {
-        self.partitions.insert(
-            mimetype,
-            Partition {
-                name: mimetype.0,
-                files: Vec::new(),
-                created_at: (),
-                last_compaction: ()
-            }
-        );
+        Ok(Vennbase { path: path.to_owned(), partitions })
     }
 
     fn get_or_create_partition(&mut self, mimetype: &str) -> &Partition {
-        match self.partitions.get(&MimeType(mimetype.to_string())) {
-            Some(partition) => partition,
-            None => {
-            },
-        }
+        let mimetype = MimeType(mimetype.to_string());
+        self.partitions.entry(mimetype).or_insert(Partition::default())
     }
 }
