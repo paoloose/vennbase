@@ -4,7 +4,13 @@ use std::fs::File;
 
 use crate::read_venn_timestamp;
 
-use super::vennbase::{VennTimestamp, FileInformation};
+use super::vennbase::VennTimestamp;
+
+#[derive(Debug)]
+pub struct FileInformation {
+    start: usize,
+    size: usize,
+}
 
 // Each partition contains multiple files of the same type
 #[derive(Debug)]
@@ -32,20 +38,19 @@ impl Partition {
         let created_at = read_venn_timestamp!(&mut reader).expect("Failed to read creation timestamp");
         let last_compaction = read_venn_timestamp!(&mut reader).expect("Failed to read last compaction timestamp");
 
+        // TODO: load the records from the file
         Ok(Partition {
             files: Vec::new(),
             created_at,
             last_compaction,
         })
     }
-}
 
-impl Default for Partition {
-    fn default() -> Self {
+    pub fn new(files: Vec<FileInformation>, created_at: VennTimestamp, last_compaction: VennTimestamp) -> Self {
         Partition {
-            files: Vec::new(),
-            created_at: VennTimestamp::now(),
-            last_compaction: VennTimestamp::now()
+            files,
+            created_at,
+            last_compaction
         }
     }
 }
