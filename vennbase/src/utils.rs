@@ -1,3 +1,5 @@
+use std::io::{self, prelude::*, BufReader, BufRead};
+
 
 #[macro_export]
 macro_rules! read_venn_timestamp {
@@ -16,4 +18,11 @@ macro_rules! read_n_bytes_as_string {
         $reader.read_exact(&mut buffer)
             .map(|_| String::from_utf8_lossy(&buffer).to_string())
     }};
+}
+
+pub fn read_line_limited<S: Read + Write>(reader: &mut BufReader<S>, n: usize) -> io::Result<String> {
+    let mut line = String::with_capacity(n);
+    let mut handle = reader.take(n as u64);
+    handle.read_line(&mut line)?;
+    Ok(line.trim_end_matches('\n').to_owned())
 }

@@ -2,7 +2,6 @@ use core::panic;
 use std::collections::HashMap;
 use std::io::{self, prelude::*, BufReader};
 use std::fs::{self, File};
-use std::path::Path;
 
 use crate::read_n_bytes_as_string;
 use crate::read_venn_timestamp;
@@ -13,6 +12,15 @@ pub struct FileInformation {
 }
 
 pub struct VennTimestamp(i64);
+
+impl VennTimestamp {
+    fn now() -> Self {
+        use std::time::UNIX_EPOCH;
+        VennTimestamp(
+            std::time::Instant::now().duration_since(UNIX_EPOCH).as_millis()
+        )
+    }
+}
 
 // Each partition contains multiple files of the same type
 pub struct Partition {
@@ -47,8 +55,12 @@ impl Database {
         Ok(Database { path: path.to_owned(), partitions: HashMap::new() })
     }
 
+    /**
+     * Saves a new record the database
+     */
     pub fn save_record(&mut self, mimetype: &str, data: &[u8]) {
-        self.partitions.get_key_value(&MimeType(mimetype.to_string()));
+        let partiition = self.partitions.get(&MimeType(mimetype.to_string()));
+        let uuid = uuid::Uuid::new_v4().to_string();
 
         println!("Saving record with type '{}': {:#?}", mimetype, data.len())
     }
@@ -95,5 +107,25 @@ impl Database {
         }
 
         Ok(Database { path: path.to_owned(), partitions })
+    }
+
+    fn create_partition(&mut self, mimetype: MimeType) {
+        self.partitions.insert(
+            mimetype,
+            Partition {
+                name: mimetype.0,
+                files: Vec::new(),
+                created_at: (),
+                last_compaction: ()
+            }
+        );
+    }
+
+    fn get_or_create_partition(&mut self, mimetype: &str) -> &Partition {
+        match self.partitions.get(&MimeType(mimetype.to_string())) {
+            Some(partition) => partition,
+            None => {
+            },
+        }
     }
 }
