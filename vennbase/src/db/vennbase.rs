@@ -2,44 +2,43 @@ use core::panic;
 use std::collections::HashMap;
 use std::io::{self, prelude::*, BufReader};
 use std::fs::{self, File};
+use std::path::PathBuf;
 
-use crate::read_n_bytes_as_string;
-use crate::read_venn_timestamp;
+use super::partition::Partition;
 
 pub struct FileInformation {
     start: usize,
     size: usize,
 }
 
-pub struct VennTimestamp(i64);
+pub struct VennTimestamp(pub i64);
 
 impl VennTimestamp {
-    fn now() -> Self {
+    pub fn now() -> Self {
         use chrono::prelude::*;
         let now = Utc::now();
         VennTimestamp(now.timestamp_millis())
     }
 }
 
-// Each partition contains multiple files of the same type
-pub struct Partition {
-    files: Vec<FileInformation>,
-    created_at: VennTimestamp,
-    last_compaction: VennTimestamp
-}
+#[derive(Eq, Hash, PartialEq)]
+pub struct MimeType(String);
 
-impl Default for Partition {
-    fn default() -> Self {
-        Partition {
-            files: Vec::new(),
-            created_at: VennTimestamp::now(),
-            last_compaction: VennTimestamp::now()
-        }
+impl From<String> for MimeType {
+    fn from(s: String) -> Self {
+        MimeType(s)
     }
 }
 
-#[derive(Eq, Hash, PartialEq)]
-pub struct MimeType(String);
+impl MimeType {
+    fn from_pathname(path: &PathBuf) -> io::Result<Self> {
+        let path = path.to_str().ok_or(
+            io::Error::new(io::ErrorKind::InvalidData, "Invalid path name")
+        )?.to_string();
+
+        Ok(MimeType(path))
+    }
+}
 
 // A database can be seen as a universe of set theory
 pub struct Vennbase {
@@ -88,29 +87,11 @@ impl Vennbase {
         for entry in dir {
             let entry = entry?;
             let path = entry.path();
-
-            if !path.is_file() {
-                return Err(
-                    io::Error::new(io::ErrorKind::Other, "Partitions can only be files")
-                )
-            }
-
-            let file = File::open(path)?;
-            let mut reader = BufReader::new(file);
-
-            // NOTE: should we implement a partition name?
-            // let partition_name = read_n_bytes_as_string!(&mut reader, 32).expect("Failed to read partition name");
-            let mimetype = read_n_bytes_as_string!(&mut reader, 255).expect("Failed to read mime type");
-            let created_at = read_venn_timestamp!(&mut reader).expect("Failed to read creation timestamp");
-            let last_compaction = read_venn_timestamp!(&mut reader).expect("Failed to read last compaction timestamp");
+            let mimetype = MimeType::from_pathname(&path)?;
 
             partitions.insert(
-                MimeType(mimetype),
-                Partition {
-                    files: Vec::new(), // TODO: read existing files
-                    created_at,
-                    last_compaction
-                }
+                mimetype,
+                Partition::from_file(&path)?
             );
         }
 
