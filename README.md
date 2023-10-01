@@ -2,6 +2,34 @@
 
 A (**pretty much WIP**) disk-efficient multimedia database that partitions data by content type.
 
+The following features are for documentation purpose, and they may not be implemented yet.
+
+## Querying the database
+
+```bash
+cargo run --release
+# Let the 'venn' alias be:
+alias venn="nc 127.0.0.1 1834 -qv"
+```
+
+Deleting any record with id `fg69a21`.
+
+```bash
+venn $'del (mime:* && id:fg69a21)\n'
+```
+
+Create a new image.
+
+```bash
+venn $'new tags:pink,anime,rock\n' < ./data/image.png
+```
+
+Retrieving the images and videos with tags pink and anime.
+
+```bash
+venn $'get (tag:pink || tag:anime) && (mime:image/* || mime:video/*)\n'
+```
+
 ## Database and partitions
 
 A `.vennbase` database file contains information about the database with the
