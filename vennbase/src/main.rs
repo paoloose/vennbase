@@ -23,7 +23,7 @@ fn handle_connection(mut stream: TcpStream, db: &mut Vennbase) -> io::Result<()>
         },
         "new" => {
             let mimetype = read_line_until(&mut reader, b'\n', MAX_MIME_TYPE_LENGTH)?;
-            let mut data = vec![0u8; 512];
+            let mut data = Vec::with_capacity(512);
             reader.read_to_end(&mut data)?;
             db.save_record(&mimetype.into(), data.as_slice())?;
         },
@@ -32,7 +32,7 @@ fn handle_connection(mut stream: TcpStream, db: &mut Vennbase) -> io::Result<()>
             db.delete_record("");
         },
         "replace" => {
-            let mut data = vec![0u8; 512];
+            let mut data = Vec::with_capacity(512);
             // TODO: read id
             reader.read_to_end(&mut data)?;
             db.replace_record("", data.as_slice());
