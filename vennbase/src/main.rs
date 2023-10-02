@@ -49,7 +49,7 @@ fn handle_connection(mut stream: TcpStream, db: &mut Vennbase) -> io::Result<()>
 
 fn main() -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:1834")?;
-    let mut db = Vennbase::from_dir("./vennbase")?;
+    let mut db = Vennbase::from_dir("./venndb")?;
 
     for connection in listener.incoming() {
         match connection {
