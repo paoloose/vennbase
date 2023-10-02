@@ -3,7 +3,7 @@ use std::io::{self, prelude::*, BufReader, BufRead};
 #[macro_export]
 macro_rules! read_venn_timestamp {
     ($reader: expr) => {{
-        use $crate::db::vennbase::VennTimestamp;
+        use $crate::db::types::VennTimestamp;
         let mut creation_time = [0u8; 8];
         $reader.read_exact(&mut creation_time)
             .map(|_| VennTimestamp(i64::from_le_bytes(creation_time)))

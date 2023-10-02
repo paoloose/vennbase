@@ -4,8 +4,7 @@ use std::io::{self, prelude::*, BufReader, BufWriter, SeekFrom};
 use std::fs::{File, OpenOptions};
 
 use crate::{read_venn_timestamp, read_u64, read_n_bytes};
-
-use super::vennbase::VennTimestamp;
+use crate::db::types::VennTimestamp;
 
 #[derive(Debug)]
 pub struct FileInformation {
