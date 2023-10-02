@@ -15,19 +15,19 @@ alias venn="nc 127.0.0.1 1834 -qv"
 Deleting any record with id `fg69a21`.
 
 ```bash
-venn $'del (mime:* && id:fg69a21)\n'
+venn <<< $'del (mime:* && id:fg69a21)'
 ```
 
 Create a new image.
 
 ```bash
-venn $'new tags:pink,anime,rock\n' < ./data/image.png
+venn <<< $'new image/png tags:pink,anime,rock\n' < ./data/image.png
 ```
 
 Retrieving the images and videos with tags pink and anime.
 
 ```bash
-venn $'get (tag:pink || tag:anime) && (mime:image/* || mime:video/*)\n'
+venn <<< $'get (tag:pink || tag:anime) && (mime:image/* || mime:video/*)'
 ```
 
 ## Database and partitions
