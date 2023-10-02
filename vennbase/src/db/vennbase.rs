@@ -13,17 +13,9 @@ pub struct VennTimestamp(pub i64);
 
 impl VennTimestamp {
     pub fn now() -> Self {
-        use chrono::prelude::*;
-        let now = Utc::now();
-        VennTimestamp(now.timestamp_millis())
+        VennTimestamp(chrono::Utc::now().timestamp_millis())
     }
 }
-
-// impl Into<&[u8]> for VennTimestamp {
-//     fn into(self) -> &'static [u8] {
-//         self.0.to_le_bytes().as_slice()
-//     }
-// }
 
 #[derive(Eq, Hash, PartialEq, Clone)]
 pub struct MimeType(String);
@@ -96,10 +88,6 @@ impl Vennbase {
      */
     pub fn save_record(&mut self, mimetype: &MimeType, data: &[u8]) -> io::Result<()> {
         let partition = self.get_mut_or_create_partition(mimetype)?;
-        let uuid = uuid::Uuid::new_v4().to_string();
-
-        // println!("{:#?}", &self.partitions);
-        println!("Saving record {uuid} with type '{:#?}': {:#?}", mimetype, data.len());
         partition.push_record(data)
     }
 
@@ -123,7 +111,7 @@ impl Vennbase {
 
             partitions.insert(
                 mimetype,
-                Partition::from_file_path(filepath)?
+                Partition::from_file(filepath)?
             );
         }
 
@@ -153,12 +141,12 @@ impl Vennbase {
         let last_compaction = VennTimestamp::now();
 
         // Not be able to write to the partition is considered fatal
-        writer.write_all(created_at.0.to_be_bytes().as_slice())?;
-        writer.write_all(last_compaction.0.to_be_bytes().as_slice())?;
+        writer.write_all(created_at.0.to_le_bytes().as_slice())?;
+        writer.write_all(last_compaction.0.to_le_bytes().as_slice())?;
 
         let new_partition = Partition::new(
-            self.path.to_owned().join(mimetype.as_str()),
-            Vec::new(),
+            partition_path,
+            HashMap::new(),
             created_at,
             last_compaction
         );
@@ -166,7 +154,7 @@ impl Vennbase {
         // FIXME: we are performing two unnecessary lookups here
         self.partitions.insert(mimetype.clone(), new_partition);
         Ok(self.partitions
-            .get_mut(&mimetype.clone())
+            .get_mut(&mimetype)
             .expect("to exist since it was just created")
         )
     }
