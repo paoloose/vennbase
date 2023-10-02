@@ -1,6 +1,5 @@
 use std::io::{self, prelude::*, BufReader, BufRead};
 
-
 #[macro_export]
 macro_rules! read_venn_timestamp {
     ($reader: expr) => {{

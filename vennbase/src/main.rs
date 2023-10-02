@@ -37,9 +37,9 @@ fn handle_connection(mut stream: TcpStream, db: &mut Vennbase) -> io::Result<()>
             reader.read_to_end(&mut data)?;
             db.replace_record("", data.as_slice());
         },
-        m @ _ => {
+        _ => {
             return Err(
-                io::Error::new(io::ErrorKind::InvalidInput, format!("Invalid request type: {m}"))
+                io::Error::new(io::ErrorKind::InvalidInput, format!("Invalid request type: {method}"))
             );
         }
     }
