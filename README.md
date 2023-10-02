@@ -58,6 +58,7 @@ Where each record structure has the following structure:
 | --------- | -------------------------------------------------------- |
 | 1 bit     | A bit indicating whether this record is active or not.   |
 | 7 bits    | Record bit flags (reserved for future use; must be zero) |
+| 16 bytes  | The ID (UUID v4) of the record                           |
 | 64 bits   | Unsigned record length (`l`) in bytes                    |
 | `l` bytes | The actual record data                                   |
 |           |                                                          |
