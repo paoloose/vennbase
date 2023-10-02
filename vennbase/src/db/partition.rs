@@ -7,7 +7,7 @@ use crate::{read_venn_timestamp, read_u64, read_n_bytes};
 use crate::db::types::VennTimestamp;
 
 #[derive(Debug)]
-pub struct FileInformation {
+pub struct RecordInformation {
     is_active: bool,
     start: u64,
     size: u64,
@@ -17,7 +17,7 @@ pub struct FileInformation {
 #[derive(Debug)]
 pub struct Partition {
     file_path: PathBuf,
-    records: HashMap<uuid::Uuid, FileInformation>,
+    records: HashMap<uuid::Uuid, RecordInformation>,
     created_at: VennTimestamp,
     last_compaction: VennTimestamp,
     next_start: u64,
@@ -63,7 +63,7 @@ impl Partition {
         // Start reading the list of records
         // NOTE: we use a loop since we don't exactly know how many records there are
         let mut next_record_start = PARTITION_HEADER_BYTES_OFFSET;
-        let mut records: HashMap<uuid::Uuid, FileInformation> = HashMap::new();
+        let mut records: HashMap<uuid::Uuid, RecordInformation> = HashMap::new();
 
         loop {
             let mut flags: [u8; 1] = [0];
@@ -81,7 +81,7 @@ impl Partition {
 
             records.insert(
                 record_id,
-                FileInformation {
+                RecordInformation {
                     is_active,
                     start: next_record_start,
                     size: record_size
@@ -104,7 +104,7 @@ impl Partition {
 
     pub fn new(
         file_path: PathBuf,
-        files: HashMap<uuid::Uuid, FileInformation>,
+        files: HashMap<uuid::Uuid, RecordInformation>,
         created_at: VennTimestamp,
         last_compaction: VennTimestamp
     ) -> Self {
@@ -133,7 +133,7 @@ impl Partition {
 
         self.records.insert(
             uuid,
-            FileInformation {
+            RecordInformation {
                 is_active: true,
                 start: self.next_start,
                 size: data.len() as u64
