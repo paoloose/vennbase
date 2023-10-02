@@ -1,18 +1,12 @@
 use core::panic;
 use std::collections::HashMap;
-use std::io;
+use std::ffi::OsStr;
+use std::fs::File;
+use std::io::{self, prelude::*, BufWriter};
 use std::fs;
 use std::path::PathBuf;
 
-use chrono::format;
-
 use super::partition::Partition;
-
-#[derive(Debug)]
-pub struct FileInformation {
-    start: usize,
-    size: usize,
-}
 
 #[derive(Debug)]
 pub struct VennTimestamp(pub i64);
@@ -25,19 +19,44 @@ impl VennTimestamp {
     }
 }
 
-#[derive(Eq, Hash, PartialEq)]
+// impl Into<&[u8]> for VennTimestamp {
+//     fn into(self) -> &'static [u8] {
+//         self.0.to_le_bytes().as_slice()
+//     }
+// }
+
+#[derive(Eq, Hash, PartialEq, Clone)]
 pub struct MimeType(String);
 
 impl MimeType {
-    fn from_pathname(path: &PathBuf) -> io::Result<Self> {
-        let path = path.to_str().ok_or(
-            io::Error::new(io::ErrorKind::InvalidData, "Invalid path name")
+    pub fn from_base64_filename(path: &OsStr) -> io::Result<Self> {
+        use base64::Engine;
+
+        let filename = path.to_str().ok_or(
+            io::Error::new(io::ErrorKind::InvalidData, "Invalid file name")
         )?.to_string();
 
-        Ok(MimeType(path))
+        println!("decoding filename: {filename}");
+
+        let decoded_mimetype = base64::engine::general_purpose::STANDARD_NO_PAD.decode(filename)
+            .map(String::from_utf8)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        Ok(MimeType(decoded_mimetype))
+    }
+
+    pub fn to_base64_pathname(&self) -> String {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD_NO_PAD.encode(&self.0)
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
     }
 }
 
+// We implemented the Debug trait ourselves so that it doesn't print an unnecessary line break
 impl std::fmt::Debug for MimeType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(format!("MimeType({})", self.0).as_str())
@@ -52,7 +71,7 @@ impl From<String> for MimeType {
 
 // A database can be seen as a universe of set theory
 pub struct Vennbase {
-    path: String,
+    path: PathBuf,
     partitions: HashMap<MimeType, Partition>
 }
 
@@ -69,19 +88,19 @@ impl Vennbase {
             Ok(_) => {},
         }
 
-        Ok(Vennbase { path: path.to_owned(), partitions: HashMap::new() })
+        Ok(Vennbase { path: path.into(), partitions: HashMap::new() })
     }
 
     /**
      * Saves a new record the database
      */
-    pub fn save_record(&mut self, mimetype: &str, data: &[u8]) {
-        let partition = self.get_or_create_partition(mimetype);
+    pub fn save_record(&mut self, mimetype: &MimeType, data: &[u8]) -> io::Result<()> {
+        let partition = self.get_mut_or_create_partition(mimetype)?;
         let uuid = uuid::Uuid::new_v4().to_string();
 
-        println!("{:#?}", self.partitions);
-
-        println!("Saving record {uuid} with type '{}': {:#?}", mimetype, data.len())
+        // println!("{:#?}", &self.partitions);
+        println!("Saving record {uuid} with type '{:#?}': {:#?}", mimetype, data.len());
+        partition.push_record(data)
     }
 
     pub fn delete_record(&mut self, id: &str) {
@@ -97,21 +116,68 @@ impl Vennbase {
         let mut partitions: HashMap<MimeType, Partition> = HashMap::new();
 
         for entry in dir {
-            let entry = entry?;
-            let path = entry.path();
-            let mimetype = MimeType::from_pathname(&path)?;
+            // Read the filename
+            let filepath = entry?.path();
+            let mimetype = MimeType::from_base64_filename(filepath.file_name().unwrap())?;
+            println!("parsing mimetype: {:#?}", mimetype);
 
             partitions.insert(
                 mimetype,
-                Partition::from_file(&path)?
+                Partition::from_file_path(filepath)?
             );
         }
 
-        Ok(Vennbase { path: path.to_owned(), partitions })
+        Ok(Vennbase { path: path.into(), partitions })
     }
 
-    fn get_or_create_partition(&mut self, mimetype: &str) -> &Partition {
-        let mimetype = MimeType(mimetype.to_string());
-        self.partitions.entry(mimetype).or_insert(Partition::default())
+    /// Creates a new partition for the database with the given Mime Type.
+    ///
+    /// Caller should ensure that the partition does not exist yet, or the whole file will be
+    /// truncated.
+    fn create_new_partition(&mut self, mimetype: MimeType) -> io::Result<&mut Partition> {
+        let partition_path = self.path.join(mimetype.to_base64_pathname());
+        assert!(!partition_path.exists());
+        println!("path: {}", partition_path.to_str().unwrap());
+        // File creation is done with `write: true`, `create: true`, `truncate: true`
+        // So the only error we can get is either a permission error, or to a database
+        // doesn't exist error. Both are fatal.
+        let file = match File::create(&partition_path) {
+            Ok(file) => file,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => todo!(),
+            Err(err) if err.kind() == io::ErrorKind::PermissionDenied => todo!(),
+            Err(_) => unreachable!()
+        };
+        let mut writer = BufWriter::new(file);
+
+        let created_at = VennTimestamp::now();
+        let last_compaction = VennTimestamp::now();
+
+        // Not be able to write to the partition is considered fatal
+        writer.write_all(created_at.0.to_be_bytes().as_slice())?;
+        writer.write_all(last_compaction.0.to_be_bytes().as_slice())?;
+
+        let new_partition = Partition::new(
+            self.path.to_owned().join(mimetype.as_str()),
+            Vec::new(),
+            created_at,
+            last_compaction
+        );
+
+        // FIXME: we are performing two unnecessary lookups here
+        self.partitions.insert(mimetype.clone(), new_partition);
+        Ok(self.partitions
+            .get_mut(&mimetype.clone())
+            .expect("to exist since it was just created")
+        )
+    }
+
+    // FIXME: this should be optimized so that we don't need to perform two lookups
+    fn get_mut_or_create_partition(&mut self, mimetype: &MimeType) -> io::Result<&mut Partition> {
+        if self.partitions.contains_key(mimetype) {
+            Ok(self.partitions.get_mut(mimetype).unwrap())
+        }
+        else {
+            self.create_new_partition(mimetype.to_owned())
+        }
     }
 }

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
-use std::io::{self, prelude::*, BufReader};
-use std::fs::File;
+use std::io::{self, prelude::*, BufReader, BufWriter};
+use std::fs::{File, OpenOptions};
 
 use crate::read_venn_timestamp;
 
@@ -15,22 +15,29 @@ pub struct FileInformation {
 // Each partition contains multiple files of the same type
 #[derive(Debug)]
 pub struct Partition {
-    files: Vec<FileInformation>,
+    file_path: PathBuf,
+    records: Vec<FileInformation>,
     created_at: VennTimestamp,
     last_compaction: VennTimestamp
 }
 
 impl Partition {
-    pub fn from_file(path: &PathBuf) -> io::Result<Self> {
-        assert!(path.exists());
+    /// Loads the partition data from an existing file_path.
+    ///
+    /// Caller MUST ensure that the file_path exists before calling this function.
+    ///
+    /// This function doesn't parse the Mime Type from the file name, it is the caller's
+    /// responsibility to ensure that the file_path is correct.
+    pub fn from_file_path(file_path: PathBuf) -> io::Result<Self> {
+        assert!(file_path.exists());
 
-        if !path.is_file() {
+        if !file_path.is_file() {
             return Err(
                 io::Error::new(io::ErrorKind::Other, "Partitions can only be files")
             )
         }
 
-        let file = File::open(path)?;
+        let file = File::open(&file_path)?;
         let mut reader = BufReader::new(file);
 
         // NOTE: should we implement a partition name?
@@ -40,17 +47,30 @@ impl Partition {
 
         // TODO: load the records from the file
         Ok(Partition {
-            files: Vec::new(),
+            file_path,
+            records: Vec::new(),
             created_at,
             last_compaction,
         })
     }
 
-    pub fn new(files: Vec<FileInformation>, created_at: VennTimestamp, last_compaction: VennTimestamp) -> Self {
+    pub fn new(file_path: PathBuf, files: Vec<FileInformation>, created_at: VennTimestamp, last_compaction: VennTimestamp) -> Self {
         Partition {
-            files,
+            file_path,
+            records: files,
             created_at,
             last_compaction
         }
+    }
+
+    pub fn push_record(&self, data: &[u8]) -> io::Result<()> {
+        // FIXME: should we move the writer to the struct itself?
+        let file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .open(&self.file_path)?;
+
+        let mut writer = BufWriter::new(file);
+        writer.write_all(data)
     }
 }

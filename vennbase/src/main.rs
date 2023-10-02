@@ -25,7 +25,7 @@ fn handle_connection(mut stream: TcpStream, db: &mut Vennbase) -> io::Result<()>
             let mimetype = read_line_until(&mut reader, b'\n', MAX_MIME_TYPE_LENGTH)?;
             let mut data = vec![0u8; 512];
             reader.read_to_end(&mut data)?;
-            db.save_record(&mimetype, data.as_slice());
+            db.save_record(&mimetype.into(), data.as_slice())?;
         },
         "del" => {
             // TODO: read id
