@@ -53,17 +53,12 @@ impl Partition {
 
         let file = File::open(&file_path)?;
         let mut reader = BufReader::new(file);
-        println!("Reading the record from {:#?}", file_path);
+        println!("  Reading partition from {:#?}", file_path);
 
         // NOTE: should we implement a partition name?
         // let partition_name = read_n_bytes_as_string!(&mut reader, 32).expect("Failed to read partition name");
         let created_at = read_venn_timestamp!(&mut reader).expect("Failed to read creation timestamp");
         let last_compaction = read_venn_timestamp!(&mut reader).expect("Failed to read last compaction timestamp");
-
-        println!(
-            "partition created at {:#?} and last compacted at {:#?}",
-            created_at, last_compaction
-        );
 
         // Start reading the list of records
         // NOTE: we use a loop since we don't exactly know how many records there are
@@ -95,7 +90,7 @@ impl Partition {
             next_record_start += RECORD_HEADER_SIZE_BYTES + record_size;
         }
 
-        println!("{:#?}", records);
+        println!("  with {} record(s)", records.len());
 
         // TODO: load the records from the file
         Ok(Partition {

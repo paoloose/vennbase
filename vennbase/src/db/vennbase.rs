@@ -28,8 +28,6 @@ impl MimeType {
             io::Error::new(io::ErrorKind::InvalidData, "Invalid file name")
         )?.to_string();
 
-        println!("decoding filename: {filename}");
-
         let decoded_mimetype = base64::engine::general_purpose::STANDARD_NO_PAD.decode(filename)
             .map(String::from_utf8)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
@@ -107,7 +105,7 @@ impl Vennbase {
             // Read the filename
             let filepath = entry?.path();
             let mimetype = MimeType::from_base64_filename(filepath.file_name().unwrap())?;
-            println!("parsing mimetype: {:#?}", mimetype);
+            println!("Found partition: {:#?}", mimetype);
 
             partitions.insert(
                 mimetype,
@@ -125,7 +123,7 @@ impl Vennbase {
     fn create_new_partition(&mut self, mimetype: MimeType) -> io::Result<&mut Partition> {
         let partition_path = self.path.join(mimetype.to_base64_pathname());
         assert!(!partition_path.exists());
-        println!("path: {}", partition_path.to_str().unwrap());
+        println!("New partition: {}", partition_path.to_str().unwrap());
         // File creation is done with `write: true`, `create: true`, `truncate: true`
         // So the only error we can get is either a permission error, or to a database
         // doesn't exist error. Both are fatal.
