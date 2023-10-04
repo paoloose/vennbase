@@ -1,19 +1,27 @@
 use core::panic;
 use std::collections::HashMap;
+use std::error::Error;
 use std::fs::File;
 use std::io::{self, prelude::*, BufWriter};
 use std::fs;
+use std::ops::Index;
 use std::path::PathBuf;
+
+use logic_parser::parsing::ASTNode;
 
 use crate::db::types::VennTimestamp;
 use crate::db::types::MimeType;
 use crate::db::partition::Partition;
+use crate::query::parse_query;
 
 // A database can be seen as a universe of set theory
 pub struct Vennbase {
     path: PathBuf,
     partitions: HashMap<MimeType, Partition>
 }
+
+#[derive(Debug)]
+pub struct VennbaseError(String);
 
 impl Vennbase {
     pub fn from_dir(path: &str) -> io::Result<Vennbase> {
@@ -45,6 +53,49 @@ impl Vennbase {
 
     pub fn replace_record(&mut self, id: &str, data: &[u8]) {
         println!("Replacing record with id: {} with data: {:#?}", id, data.len())
+    }
+
+    pub fn query_record(&self, query: &str) -> Result<(), VennbaseError> {
+        let parsed_query = parse_query(query)
+            .map_err(|_| VennbaseError("Invalid query".into()))?;
+
+        println!("received query: {:#?}", parsed_query);
+        // FIXME: this need to be optimized. maybe using the Shunting yard algorithm?
+        // https://en.wikipedia.org/wiki/Shunting_yard_algorithm
+        let partition_i = 0;
+
+        fn evaluate(node: ASTNode) -> Result<bool, ()> {
+            match node {
+                ASTNode::Not { operand } => Ok(!evaluate(*operand)?),
+                ASTNode::And { left, right } => Ok(evaluate(*left)? && evaluate(*right)?),
+                ASTNode::Or { left, right } => Ok(evaluate(*left)? || evaluate(*right)?),
+                ASTNode::Implies { left, right } => Ok(!evaluate(*left)? || evaluate(*right)?),
+                ASTNode::IfAndOnlyIf { left, right } => Ok(evaluate(*left)? == evaluate(*right)?),
+                ASTNode::Literal { value } => Ok(value),
+                ASTNode::Identifier { name: expression } => {
+                    // get index of ':'
+                    let colon_i = expression.find(':').ok_or(())?;
+                    // FIXME: improve error granularity
+                    if colon_i == 0 || colon_i > expression.len() || expression.rfind(':').unwrap() != colon_i {
+                        return Err(());
+                    }
+                    // Due to the checks, `filter` and `name` must be valid strings at this point
+                    let (filter, value) = expression.split_at(colon_i);
+                    match filter {
+                        "tag" => {},
+                        "mime" => {},
+                        "id" => {}
+                        _ => return Err(())
+                    }
+                    Ok(true)
+                },
+            }
+        }
+
+        for partition in &self.partitions {
+        }
+
+        Ok(())
     }
 
     fn parse_dir_tree(path: &str) -> io::Result<Vennbase> {
@@ -116,4 +167,8 @@ impl Vennbase {
             self.create_new_partition(mimetype.to_owned())
         }
     }
+
+    // fn evaluate_query() -> Result<(), VennbaseError> {
+    //
+    // }
 }

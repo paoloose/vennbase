@@ -41,7 +41,7 @@ macro_rules! read_n_bytes {
  * Read a line from a buffer until either an stop byte is found or the limit 'n'
  * was reached.
  */
-pub fn read_line_until<S>(reader: &mut BufReader<S>, stop: u8, n: usize) -> io::Result<String>
+pub fn read_string_until<S>(reader: &mut BufReader<S>, stop: u8, n: usize) -> io::Result<String>
 where S: Read + Write {
     let mut line = Vec::with_capacity(n);
     let mut handle = reader.take(n as u64);
