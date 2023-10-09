@@ -30,6 +30,10 @@ Retrieving the images and videos with tags pink and anime.
 venn <<< $'get (tag:pink || tag:anime) && (mime:image/* || mime:video/*)'
 ```
 
+```bash
+venn <<< $'get (mime:image/* && tag:anime) || (mime:video/* && !tag:anime)'
+```
+
 ## Database and partitions
 
 A `.vennbase` database file contains information about the database with the

@@ -55,47 +55,110 @@ impl Vennbase {
         println!("Replacing record with id: {} with data: {:#?}", id, data.len())
     }
 
-    pub fn query_record(&self, query: &str) -> Result<(), VennbaseError> {
+    pub fn query_record(&self, query: &str) -> Result<Vec<&uuid::Uuid>, VennbaseError> {
         let parsed_query = parse_query(query)
             .map_err(|_| VennbaseError("Invalid query".into()))?;
 
-        println!("received query: {:#?}", parsed_query);
+        println!("received query: {:?}", parsed_query);
         // FIXME: this need to be optimized. maybe using the Shunting yard algorithm?
         // https://en.wikipedia.org/wiki/Shunting_yard_algorithm
-        let partition_i = 0;
+        let mut matched_records = Vec::<&uuid::Uuid>::with_capacity(4); // lucky number
 
-        fn evaluate(node: ASTNode) -> Result<bool, ()> {
+        fn evaluate(node: &ASTNode, mime: &MimeType, id: &uuid::Uuid) -> Result<bool, ()> {
             match node {
-                ASTNode::Not { operand } => Ok(!evaluate(*operand)?),
-                ASTNode::And { left, right } => Ok(evaluate(*left)? && evaluate(*right)?),
-                ASTNode::Or { left, right } => Ok(evaluate(*left)? || evaluate(*right)?),
-                ASTNode::Implies { left, right } => Ok(!evaluate(*left)? || evaluate(*right)?),
-                ASTNode::IfAndOnlyIf { left, right } => Ok(evaluate(*left)? == evaluate(*right)?),
-                ASTNode::Literal { value } => Ok(value),
+                ASTNode::Not { operand } => {
+                    Ok(!evaluate(operand, mime, id)?)
+                },
+                ASTNode::And { left, right } => {
+                    Ok(evaluate(left, mime, id)? && evaluate(right, mime, id)?)
+                },
+                ASTNode::Or { left, right } => {
+                    Ok(evaluate(left, mime, id)? || evaluate(right, mime, id)?)
+                },
+                ASTNode::Implies { left, right } => {
+                    Ok(!evaluate(left, mime, id)? || evaluate(right, mime, id)?)
+                },
+                ASTNode::IfAndOnlyIf { left, right } => {
+                    Ok(evaluate(left, mime, id)? == evaluate(right, mime, id)?)
+                },
+                ASTNode::Literal { value } => {
+                    Ok(*value)
+                },
                 ASTNode::Identifier { name: expression } => {
-                    // get index of ':'
                     let colon_i = expression.find(':').ok_or(())?;
-                    // FIXME: improve error granularity
-                    if colon_i == 0 || colon_i > expression.len() || expression.rfind(':').unwrap() != colon_i {
+                    if colon_i == 0 || colon_i == expression.len() - 1 {
+                        // FIXME: improve error granularity
+                        // is this check really needed? (expression.rfind(':').unwrap() != colon_i)
                         return Err(());
                     }
                     // Due to the checks, `filter` and `name` must be valid strings at this point
-                    let (filter, value) = expression.split_at(colon_i);
-                    match filter {
-                        "tag" => {},
-                        "mime" => {},
-                        "id" => {}
-                        _ => return Err(())
+                    let (filter_name, filter) = expression.split_at(colon_i + 1);
+                    if filter == "*" {
+                        return Ok(true);
                     }
-                    Ok(true)
+
+                    let result = match filter_name {
+                        "tag:" => true, // TODO: Implement tag system
+                        "mime:" => filter == mime.as_str(),
+                        "id:" => filter == id.to_string(),
+                        other => {
+                            dbg!(other);
+                            return Err(())
+                        }
+                    };
+                    Ok(result)
                 },
             }
         }
 
-        for partition in &self.partitions {
-        }
+        let variables = parsed_query.get_identifiers();
+        println!("identifiers: {variables:?}");
 
-        Ok(())
+        // if !variables.iter().any(|v| v.contains("mime:")) {
+            // Evaluate each record on every partition. MimeType doesnt matter
+            for (mimetype, partition) in &self.partitions {
+                for (uuid, _) in partition.iter_active_records() {
+                    let matches = evaluate(&parsed_query, mimetype, &uuid)
+                        .map_err(|_| VennbaseError("Failed to evaluate".into()))?;
+                    if matches {
+                        matched_records.push(&uuid);
+                    }
+                }
+            }
+            return Ok(matched_records);
+        // }
+
+        // At this point, since the query contains some MimeType criteria, we have the
+        // advantage of determining which partitions to skip
+        // NOTE: this has no advantage for small partitions.
+        // for (mimetype, partition) in &self.partitions {
+        //     let should_evaluate = false;
+        //     // Decide if we should skip the partition based on its mimetype
+
+        //     // in order to permutate this correctly, we should have:
+        //     // HashMap<String, VariablePermutation>
+        //     let variables_table = fix_boolean_values_for_mimetype(variables, mimetype);
+        //     // variable table should make mimetypes fickle!!!
+
+        //     // if some permutation of the fickle permutation matches, then the partition
+        //     // should be evaluated.
+        //     for permutation in permutate_fickle(variables_table) {
+        //         // evaluate this permutation
+        //         if should_evaluate = evaluate_for_table(&parsed_query, &permutation).unwrap() {
+        //             break;
+        //         }
+        //     }
+
+        //     if should_evaluate {
+        //         for record in partition.iter_active_records() {
+        //             if evaluate_for_record(&parsed_query, &record, &mimetype) == true {
+        //                 matched_records.push(record);
+        //             }
+        //         }
+        //     }
+        // }
+
+        Ok(vec![])
     }
 
     fn parse_dir_tree(path: &str) -> io::Result<Vennbase> {

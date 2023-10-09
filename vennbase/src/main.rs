@@ -23,7 +23,10 @@ fn handle_connection(mut stream: TcpStream, db: &mut Vennbase) -> io::Result<()>
     match method.as_str() {
         "get" => {
             let query = read_string_until(&mut reader, b'\n', MAX_QUERY_INPUT_LENGTH)?;
-            db.query_record(query.as_str());
+            match db.query_record(query.as_str()) {
+                Ok(records) => println!("result: {:?}", records),
+                Err(e) => println!("Error(get): {:?}", e),
+            }
         },
         "new" => {
             let mimetype = read_string_until(&mut reader, b'\n', MAX_MIME_TYPE_LENGTH)?;
@@ -41,9 +44,12 @@ fn handle_connection(mut stream: TcpStream, db: &mut Vennbase) -> io::Result<()>
             reader.read_to_end(&mut data)?;
             db.replace_record("", data.as_slice());
         },
-        _ => {
+        other => {
             return Err(
-                io::Error::new(io::ErrorKind::InvalidInput, format!("Invalid request type: {method}"))
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("Invalid request type: {other}")
+                )
             );
         }
     }

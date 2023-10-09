@@ -102,6 +102,10 @@ impl Partition {
         })
     }
 
+    pub fn records_len(&self) -> usize {
+        self.records.len()
+    }
+
     pub fn new(
         file_path: PathBuf,
         files: HashMap<uuid::Uuid, RecordInformation>,
@@ -142,5 +146,11 @@ impl Partition {
         self.next_start += (data.len() + 9) as u64; // 1 byte for the header, 8 bytes for the size
 
         Ok(())
+    }
+
+    pub fn iter_active_records(&self) -> impl Iterator<Item=(&uuid::Uuid, &RecordInformation)> {
+        self.records
+            .iter()
+            .filter(|(_, record)| record.is_active)
     }
 }
