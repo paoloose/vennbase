@@ -5,26 +5,34 @@ type Job = Box<dyn Send + 'static + FnOnce() -> ()>;
 
 struct Worker {
     // receiver: Arc<Mutex<mpsc::Receiver<Job>>>,
-    thread: JoinHandle<()>
+    id: usize,
+    // If there is some thread, then the worker is running
+    thread: Option<JoinHandle<()>>
 }
 
 pub struct ThreadPool {
-    sender: mpsc::Sender<Job>,
+    sender: Option<mpsc::Sender<Job>>,
     workers: Vec<Worker>
 }
 
 impl Worker {
     fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Self {
         let thread = thread::spawn(move || loop {
-            let job = receiver.lock().unwrap().recv().unwrap();
-            println!("worker {id}: received job");
-            job();
+            match receiver.lock().unwrap().recv() {
+                Ok(job) => job(),
+                Err(_) => break,
+            }
         });
-        Worker { thread }
+        Worker { id, thread: Some(thread) }
     }
 }
 
+/// Simple thread pool that implement graceful shutdown
 impl ThreadPool {
+    /// Creates a new thread pool with a given amount of workers.
+    ///
+    /// # Panics
+    /// Panics if `n` is zero
     pub fn new(n: usize) -> Self {
         assert!(n > 0);
         let (sender, receiver) = mpsc::channel::<Job>();
@@ -35,13 +43,37 @@ impl ThreadPool {
             workers.push(Worker::new(id, Arc::clone(&receiver)));
         }
 
-        ThreadPool { workers, sender }
+        ThreadPool { workers, sender: Some(sender) }
     }
 
-    pub fn spawn<F>(&self, f: F)
+    /// Runs a given job.
+    ///
+    /// There is no guarantee that the job will be executed immediately.
+    /// Any free worker is able to take the job and execute it.
+    pub fn run<F>(&self, job: F)
     where F: FnOnce() -> () + Send + 'static
     {
-        let job = Box::new(f);
-        self.sender.send(job).unwrap();
+        let job = Box::new(job);
+        self.sender.as_ref().unwrap().send(job).expect("Receiver channel is still opened");
+    }
+
+    pub fn with_same_workers_as_cpus() -> std::io::Result<Self> {
+        let cpus = std::thread::available_parallelism()?;
+        Ok(ThreadPool::new(cpus.get()))
+    }
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        // Drops the sender so all workers stop waiting for jobs
+        drop(self.sender.take().unwrap());
+
+        // Waits for all workers to finish
+        for worker in &mut self.workers {
+            println!("joining thread {id}", id=worker.id);
+            if let Some(thread) = worker.thread.take() {
+                thread.join().expect("Couldn't join thread");
+            }
+        }
     }
 }

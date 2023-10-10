@@ -7,7 +7,6 @@ pub mod pool;
 use std::io::{self, prelude::*, BufReader};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 use crate::db::vennbase::Vennbase;
 use crate::utils::reading::read_string_until;
@@ -70,10 +69,9 @@ fn main() -> io::Result<()> {
         match stream {
             Ok(conn) => {
                 let db = Arc::clone(&db);
-                pool.spawn(move || {
+                pool.run(move || {
                     let mut db = db.lock().unwrap();
                     let result = handle_connection(conn, &mut db);
-                    thread::sleep(std::time::Duration::from_millis(2000));
                     if result.is_err() {
                         // NOTE: This is currently failing for the following reasons:
                         // - invalid utf8s
