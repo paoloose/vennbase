@@ -12,7 +12,10 @@ use crate::db::types::MimeType;
 use crate::db::partition::Partition;
 use crate::query::parse_query;
 
-// A database can be seen as a universe of set theory
+/// A venbase database instance.
+///
+/// Conceptually, you can think of a database as a universe from Set Theory,
+/// partitioned by content type, where each element of a partitions is called a record.
 pub struct Vennbase {
     path: PathBuf,
     partitions: HashMap<MimeType, Partition>
