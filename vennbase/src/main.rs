@@ -1,14 +1,17 @@
 #![deny(elided_lifetimes_in_paths)]
-
 pub mod utils;
 pub mod db;
 pub mod query;
+pub mod pool;
 
 use std::io::{self, prelude::*, BufReader};
 use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 use crate::db::vennbase::Vennbase;
 use crate::utils::reading::read_string_until;
+use crate::pool::ThreadPool;
 
 const MAX_METHOD_TYPE_SIZE: usize = 8; // max('replace', 'del', 'create')
 const MAX_MIME_TYPE_LENGTH: usize = 255;
@@ -24,7 +27,7 @@ fn handle_connection(mut stream: TcpStream, db: &mut Vennbase) -> io::Result<()>
         "get" => {
             let query = read_string_until(&mut reader, b'\n', MAX_QUERY_INPUT_LENGTH)?;
             match db.query_record(query.as_str()) {
-                Ok(records) => println!("result: {:?}", records),
+                Ok(records) => println!("queried {} records.", records.len()),
                 Err(e) => println!("Error(get): {:?}", e),
             }
         },
@@ -59,17 +62,26 @@ fn handle_connection(mut stream: TcpStream, db: &mut Vennbase) -> io::Result<()>
 
 fn main() -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:1834")?;
-    let mut db = Vennbase::from_dir("./venndb")?;
+    // let mut db = Vennbase::from_dir("./venndb")?;
+    let db = Arc::new(Mutex::new(Vennbase::from_dir("./venndb")?));
+    let mut pool = ThreadPool::new(4);
 
-    for connection in listener.incoming() {
-        match connection {
+    for stream in listener.incoming() {
+        println!("connection!");
+        match stream {
             Ok(conn) => {
-                let result = handle_connection(conn, &mut db);
-                if result.is_err() {
-                    // NOTE: This is currently failing for the following reasons:
-                    // - invalid utf8s
-                    println!("err: {:#?}", result);
-                }
+                let db = Arc::clone(&db);
+                pool.spawn(move || {
+                    let mut db = db.lock().unwrap();
+                    let result = handle_connection(conn, &mut db);
+                    println!("good!");
+                    thread::sleep(std::time::Duration::from_millis(2000));
+                    if result.is_err() {
+                        // NOTE: This is currently failing for the following reasons:
+                        // - invalid utf8s
+                        println!("err: {:#?}", result);
+                    }
+                });
             },
             Err(e) => {
                 println!("Error: {}", e);

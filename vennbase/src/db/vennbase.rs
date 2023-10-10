@@ -1,10 +1,8 @@
 use core::panic;
 use std::collections::HashMap;
-use std::error::Error;
 use std::fs::File;
 use std::io::{self, prelude::*, BufWriter};
 use std::fs;
-use std::ops::Index;
 use std::path::PathBuf;
 
 use logic_parser::parsing::ASTNode;
@@ -27,10 +25,8 @@ impl Vennbase {
     pub fn from_dir(path: &str) -> io::Result<Vennbase> {
         match fs::create_dir(path) {
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-                return Ok(
-                    Vennbase::parse_dir_tree(path)
-                        .expect("Malformed database directory")
-                )
+                let tree = Vennbase::parse_dir_tree(path).expect("Malformed database directory");
+                return Ok(tree);
             }
             Err(e) => panic!("Couldn't create database directory: {:#?}", e),
             Ok(_) => {},
@@ -58,8 +54,6 @@ impl Vennbase {
     pub fn query_record(&self, query: &str) -> Result<Vec<&uuid::Uuid>, VennbaseError> {
         let parsed_query = parse_query(query)
             .map_err(|_| VennbaseError("Invalid query".into()))?;
-
-        println!("received query: {:?}", parsed_query);
         // FIXME: this need to be optimized. maybe using the Shunting yard algorithm?
         // https://en.wikipedia.org/wiki/Shunting_yard_algorithm
         let mut matched_records = Vec::<&uuid::Uuid>::with_capacity(4); // lucky number
@@ -111,21 +105,19 @@ impl Vennbase {
             }
         }
 
-        let variables = parsed_query.get_identifiers();
-        println!("identifiers: {variables:?}");
-
+        // let variables = parsed_query.get_identifiers();
         // if !variables.iter().any(|v| v.contains("mime:")) {
             // Evaluate each record on every partition. MimeType doesnt matter
-            for (mimetype, partition) in &self.partitions {
-                for (uuid, _) in partition.iter_active_records() {
-                    let matches = evaluate(&parsed_query, mimetype, &uuid)
-                        .map_err(|_| VennbaseError("Failed to evaluate".into()))?;
-                    if matches {
-                        matched_records.push(&uuid);
-                    }
+        for (mimetype, partition) in &self.partitions {
+            for (uuid, _) in partition.iter_active_records() {
+                let matches = evaluate(&parsed_query, mimetype, &uuid)
+                    .map_err(|_| VennbaseError("Failed to evaluate".into()))?;
+                if matches {
+                    matched_records.push(&uuid);
                 }
             }
-            return Ok(matched_records);
+        }
+        return Ok(matched_records);
         // }
 
         // At this point, since the query contains some MimeType criteria, we have the
@@ -158,7 +150,6 @@ impl Vennbase {
         //     }
         // }
 
-        Ok(vec![])
     }
 
     fn parse_dir_tree(path: &str) -> io::Result<Vennbase> {
