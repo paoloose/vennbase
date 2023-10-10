@@ -64,17 +64,15 @@ fn main() -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:1834")?;
     // let mut db = Vennbase::from_dir("./venndb")?;
     let db = Arc::new(Mutex::new(Vennbase::from_dir("./venndb")?));
-    let mut pool = ThreadPool::new(4);
+    let pool = ThreadPool::new(4);
 
     for stream in listener.incoming() {
-        println!("connection!");
         match stream {
             Ok(conn) => {
                 let db = Arc::clone(&db);
                 pool.spawn(move || {
                     let mut db = db.lock().unwrap();
                     let result = handle_connection(conn, &mut db);
-                    println!("good!");
                     thread::sleep(std::time::Duration::from_millis(2000));
                     if result.is_err() {
                         // NOTE: This is currently failing for the following reasons:

@@ -1,59 +1,47 @@
-use std::sync::atomic::{Ordering, AtomicUsize};
 use std::thread::{self, JoinHandle};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
+
+type Job = Box<dyn Send + 'static + FnOnce() -> ()>;
+
+struct Worker {
+    // receiver: Arc<Mutex<mpsc::Receiver<Job>>>,
+    thread: JoinHandle<()>
+}
 
 pub struct ThreadPool {
-    limit: usize,
-    current: Arc<AtomicUsize>,
-    pool: Arc<Mutex<Vec<JoinHandle<()>>>>
+    sender: mpsc::Sender<Job>,
+    workers: Vec<Worker>
+}
+
+impl Worker {
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Self {
+        let thread = thread::spawn(move || loop {
+            let job = receiver.lock().unwrap().recv().unwrap();
+            println!("worker {id}: received job");
+            job();
+        });
+        Worker { thread }
+    }
 }
 
 impl ThreadPool {
     pub fn new(n: usize) -> Self {
         assert!(n > 0);
-        ThreadPool {
-            limit: n,
-            current: Arc::new(AtomicUsize::new(0)),
-            pool: Arc::new(Mutex::new(Vec::with_capacity(n)))
+        let (sender, receiver) = mpsc::channel::<Job>();
+        let mut workers = Vec::with_capacity(n);
+
+        let receiver = Arc::new(Mutex::new(receiver));
+        for id in  0..n {
+            workers.push(Worker::new(id, Arc::clone(&receiver)));
         }
+
+        ThreadPool { workers, sender }
     }
 
-    pub fn spawn<F, T>(&mut self, f: F)
-    where
-        F: FnOnce() -> T + Send + 'static,
-        T: Send + 'static
+    pub fn spawn<F>(&self, f: F)
+    where F: FnOnce() -> () + Send + 'static
     {
-        let current = self.current.load(Ordering::Relaxed);
-        dbg!(current);
-        if current < self.limit {
-            let current = self.current.clone();
-            current.fetch_add(1, Ordering::Relaxed);
-            let pool = self.pool.clone();
-            let handle = thread::spawn(move || {
-                f();
-                let mut pool = pool.lock().unwrap();
-                pool.retain(|handle| handle.thread().id() != thread::current().id());
-                current.fetch_sub(1, Ordering::Relaxed);
-                println!("pool len: {len}", len=pool.len());
-            });
-            self.pool.lock().unwrap().push(handle);
-        }
-        else {
-            let mut pool = self.pool.lock().unwrap();
-            let handle = pool.pop().unwrap();
-            handle.join().unwrap();
-
-            let current = self.current.clone();
-            current.fetch_add(1, Ordering::Relaxed);
-            let pool = self.pool.clone();
-            let handle = thread::spawn(move || {
-                f();
-                let mut pool = pool.lock().unwrap();
-                pool.retain(|handle| handle.thread().id() != thread::current().id());
-                current.fetch_sub(1, Ordering::Relaxed);
-                println!("pool len: {len}", len=pool.len());
-            });
-            self.pool.lock().unwrap().push(handle);
-        }
+        let job = Box::new(f);
+        self.sender.send(job).unwrap();
     }
 }
