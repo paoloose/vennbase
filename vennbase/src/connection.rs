@@ -17,7 +17,10 @@ pub fn handle_connection(mut stream: TcpStream, db: &mut Vennbase) -> io::Result
         "get" => {
             let query = read_string_until(&mut reader, b'\n', MAX_QUERY_INPUT_LENGTH)?;
             match db.query_record(query.as_str()) {
-                Ok(records) => println!("queried {} records.", records.len()),
+                Ok(records) => {
+                    println!("{records:#?}");
+                    println!("{} record(s) queried.", records.len());
+                },
                 Err(e) => println!("Error(get): {:?}", e),
             }
         },

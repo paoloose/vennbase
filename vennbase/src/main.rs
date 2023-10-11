@@ -15,7 +15,7 @@ use crate::connection::handle_connection;
 
 fn main() -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:1834")?;
-    // let mut db = Vennbase::from_dir("./venndb")?;
+    println!("Listening on port 1834 🐢\n");
     let db = Arc::new(Mutex::new(Vennbase::from_dir("./venndb")?));
     let pool = ThreadPool::with_same_workers_as_cpus().unwrap();
 

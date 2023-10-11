@@ -53,7 +53,7 @@ impl Partition {
 
         let file = File::open(&file_path)?;
         let mut reader = BufReader::new(file);
-        println!("  Reading partition from {:#?}", file_path);
+        println!("  from {:#?}", file_path);
 
         // NOTE: should we implement a partition name?
         // let partition_name = read_n_bytes_as_string!(&mut reader, 32).expect("Failed to read partition name");
