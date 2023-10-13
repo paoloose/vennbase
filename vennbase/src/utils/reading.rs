@@ -38,13 +38,16 @@ macro_rules! read_n_bytes {
 }
 
 /**
- * Read a line from a buffer until either an stop byte is found or the limit 'n'
+ * Read a line from a buffer until either an stop byte is found or the limit 'stop'
  * was reached.
+ *
+ * The difference between the usual read_until method is that this wraps the reader on
+ * a reader.take adaptaer so you can set a limit on the number of bytes read.
  */
-pub fn read_string_until<S>(reader: &mut BufReader<S>, stop: u8, n: usize) -> io::Result<String>
-where S: Read + Write {
-    let mut line = Vec::with_capacity(n);
-    let mut handle = reader.take(n as u64);
+pub fn read_string_until<S>(reader: &mut BufReader<S>, stop: u8, max_length: usize) -> io::Result<String>
+where S: Read {
+    let mut line = Vec::with_capacity(max_length);
+    let mut handle = reader.take(max_length as u64);
     handle.read_until(stop, &mut line)?;
     Ok(
         String::from_utf8(line)
