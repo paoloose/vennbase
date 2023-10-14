@@ -7,31 +7,66 @@ The following features are for documentation purpose, and they may not be implem
 ## Querying the database
 
 ```bash
-cargo run --release
 # Let the 'venn' alias be:
 alias venn="nc 127.0.0.1 1834 -qv"
 ```
 
-Deleting any record with id `fg69a21`.
+### Creating a record with `save`
 
-```bash
-venn <<< $'del (mime:* && id:fg69a21)'
+```plain
+save <content-type> len=<len> tags=[...<tags>]
+<binary-data>
 ```
 
-Create a new image.
+**Examples:**
+
+Store a new image in the database.
 
 ```bash
-venn <<< $'new image/png tags:pink,anime,rock\n' < ./data/image.png
+venn <<< $'save image/png len=692521 tags=['pink' 'anime' 'rock']\n' < ./data/image.png
 ```
+
+Storing an image without tags.
+
+```bash
+img_len=$(wc -c < ./data/image.png)
+venn <<< $'save image/png len=${img_len}\n' < ./data/image.png
+```
+
+### Querying records with `query`
+
+Vennbase queries are written in a custom query language, similar to the logic
+expressions you already know:
+
+```plain
+query skip=<n> limit=<m>
+<query>
+```
+
+**Examples:**
 
 Retrieving the images and videos with tags pink and anime.
 
 ```bash
-venn <<< $'get (tag:pink || tag:anime) && (mime:image/* || mime:video/*)'
+venn <<< $'query (mime:image/* && tag:anime) || (mime:video/* && !tag:anime)'
 ```
 
 ```bash
-venn <<< $'get (mime:image/* && tag:anime) || (mime:video/* && !tag:anime)'
+venn <<< $'query skip=20 limit=10 (tag:'pink' || tag:'anime') && (mime:image/* || mime:video/*)'
+```
+
+### Fetching records with `get`
+
+```plain
+get <id>
+```
+
+**Examples:**
+
+Downloading a record with ID `f81d4fae-7dec-11d0-a765-00a0c91e6bf6`.
+
+```bash
+venn <<< $'fetch f81d4fae-7dec-11d0-a765-00a0c91e6bf6' > ./data/image.png
 ```
 
 ## Database and partitions

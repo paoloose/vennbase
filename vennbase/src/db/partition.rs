@@ -13,6 +13,8 @@ pub struct RecordInformation {
     size: u64,
 }
 
+pub type BufferedRecord = io::Take<BufReader<File>>;
+
 // Each partition contains multiple files of the same type
 #[derive(Debug)]
 pub struct Partition {
@@ -61,9 +63,10 @@ impl Partition {
         let last_compaction = read_venn_timestamp!(&mut reader).expect("Failed to read last compaction timestamp");
 
         // Start reading the list of records
+        // (skipping the partition header, since we already read it)
         // NOTE: we use a loop since we don't exactly know how many records there are
         let mut next_record_start = PARTITION_HEADER_BYTES_OFFSET;
-        let mut records: HashMap<uuid::Uuid, RecordInformation> = HashMap::new();
+        let mut records: HashMap<uuid::Uuid, RecordInformation> = HashMap::with_capacity(8);
 
         loop {
             let mut flags: [u8; 1] = [0];
@@ -76,9 +79,7 @@ impl Partition {
             let record_id = uuid::Uuid::from_bytes(read_n_bytes!(&mut reader, 16)?);
             let record_size = read_u64!(&mut reader)?;
 
-            // Skip the {record_size} bytes of data
-            reader.seek(SeekFrom::Start(next_record_start + RECORD_HEADER_SIZE_BYTES + record_size))?;
-
+            next_record_start += RECORD_HEADER_SIZE_BYTES;
             records.insert(
                 record_id,
                 RecordInformation {
@@ -87,7 +88,9 @@ impl Partition {
                     size: record_size
                 }
             );
-            next_record_start += RECORD_HEADER_SIZE_BYTES + record_size;
+            // Skip the {record_size} bytes of data
+            next_record_start += record_size;
+            reader.seek(SeekFrom::Start(next_record_start))?;
         }
 
         println!("  with {} record(s)", records.len());
@@ -98,14 +101,20 @@ impl Partition {
             records,
             created_at,
             last_compaction,
-            next_start: next_record_start
+            next_start: next_record_start + RECORD_HEADER_SIZE_BYTES
         })
     }
 
+    /// Returns the number of records in the partition.
+    ///
+    /// This considers both active and inactive records.
     pub fn records_len(&self) -> usize {
         self.records.len()
     }
 
+    /// Must be called when a new partition on the disk has been created.
+    ///
+    /// This sets the `next_start` pointing to the first record content data (skipping the header).
     pub fn new(
         file_path: PathBuf,
         files: HashMap<uuid::Uuid, RecordInformation>,
@@ -117,18 +126,17 @@ impl Partition {
             records: files,
             created_at,
             last_compaction,
-            next_start: PARTITION_HEADER_BYTES_OFFSET
+            next_start: PARTITION_HEADER_BYTES_OFFSET + RECORD_HEADER_SIZE_BYTES
         }
     }
 
-    pub fn push_record(&mut self, data: &[u8]) -> io::Result<()> {
+    pub fn push_record(&mut self, data: &[u8]) -> io::Result<uuid::Uuid> {
         let uuid = uuid::Uuid::new_v4();
         // FIXME: should we move the writer to the struct itself?
         let file = OpenOptions::new()
             .append(true)
             .open(&self.file_path)?;
 
-        println!("Saving record {uuid} with len {:#?}", data.len());
         let mut writer = BufWriter::new(file);
         writer.write(&[1 << 7])?;
         writer.write(uuid.as_bytes())?;
@@ -143,9 +151,29 @@ impl Partition {
                 size: data.len() as u64
             }
         );
-        self.next_start += (data.len() + 9) as u64; // 1 byte for the header, 8 bytes for the size
 
-        Ok(())
+        self.next_start += data.len() as u64 + RECORD_HEADER_SIZE_BYTES;
+
+        Ok(uuid)
+    }
+
+    pub fn get_record_information(&self, record_id: &uuid::Uuid) -> Option<&RecordInformation> {
+        self.records.get(record_id)
+    }
+
+    pub fn fetch_record(&self, record_id: &uuid::Uuid) -> io::Result<Option<BufferedRecord>> {
+        match self.records.get(record_id) {
+            Some(record_info) => {
+                let file = File::open(&self.file_path)?;
+                let mut reader = BufReader::new(file);
+
+                reader.seek(SeekFrom::Start(record_info.start))?;
+                Ok(Some(reader.take(record_info.size)))
+            },
+            None => {
+                Ok(None)
+            },
+        }
     }
 
     pub fn iter_active_records(&self) -> impl Iterator<Item=(&uuid::Uuid, &RecordInformation)> {

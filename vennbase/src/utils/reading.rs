@@ -54,11 +54,11 @@ where S: Read {
     let mut handle = reader.take(max_length as u64);
 
     let n = handle.read_until(stop, &mut line)?;
-    Ok((
-        String::from_utf8(line)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
-            .trim_end_matches(stop as char)
-            .to_string(),
-        n == 0 // EOF
-    ))
+
+    let string_read = String::from_utf8(line)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+        .trim_end_matches(stop as char)
+        .to_string();
+
+    Ok((string_read, n == 0 /* EOF */))
 }

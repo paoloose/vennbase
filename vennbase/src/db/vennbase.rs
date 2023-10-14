@@ -12,6 +12,8 @@ use crate::db::types::MimeType;
 use crate::db::partition::Partition;
 use crate::query::parse_query;
 
+use super::partition::BufferedRecord;
+
 /// A venbase database instance.
 ///
 /// Conceptually, you can think of a database as a universe from Set Theory,
@@ -38,20 +40,20 @@ impl Vennbase {
         Ok(Vennbase { path: path.into(), partitions: HashMap::new() })
     }
 
-    /**
-     * Saves a new record the database
-     */
-    pub fn save_record(&mut self, mimetype: &MimeType, data: &[u8]) -> io::Result<()> {
+    /// Saves a new record the database and returns its UUID.
+    ///
+    /// If the partition for the given mimetype doesn't exist, it will be created.
+    pub fn save_record(&mut self, mimetype: &MimeType, data: &[u8]) -> io::Result<uuid::Uuid> {
         let partition = self.get_mut_or_create_partition(mimetype)?;
         partition.push_record(data)
     }
 
     pub fn delete_record(&mut self, id: &str) {
-        println!("Deleting record with id: {}", id)
+        unimplemented!("Deleting record with id: {}", id);
     }
 
     pub fn replace_record(&mut self, id: &str, data: &[u8]) {
-        println!("Replacing record with id: {} with data: {:#?}", id, data.len())
+        unimplemented!("Replacing record with id: {} with data: {:#?}", id, data.len());
     }
 
     pub fn query_record(&self, query: &str) -> Result<Vec<&uuid::Uuid>, VennbaseError> {
@@ -153,6 +155,17 @@ impl Vennbase {
         //     }
         // }
 
+    }
+
+    pub fn fetch_record_by_id(&self, record_id: &uuid::Uuid) -> io::Result<Option<BufferedRecord>> {
+        for (_mimetype, partition) in &self.partitions {
+            let reader = partition.fetch_record(record_id)?;
+            match reader {
+                Some(record) => return Ok(Some(record)),
+                _ => (),
+            };
+        }
+        Ok(None)
     }
 
     fn parse_dir_tree(path: &str) -> io::Result<Vennbase> {
