@@ -51,3 +51,10 @@ impl From<String> for MimeType {
         MimeType(s)
     }
 }
+
+impl From<&str> for MimeType {
+    fn from(value: &str) -> Self {
+        MimeType(value.to_string())
+    }
+}
+

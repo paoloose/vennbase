@@ -25,7 +25,7 @@ fn main() -> io::Result<()> {
                 let db = Arc::clone(&db);
                 pool.run(move || {
                     let mut db = db.lock().unwrap();
-                    let result = handle_connection(conn, &mut db);
+                    let result = handle_connection(&conn, &mut db);
                     if result.is_err() {
                         // NOTE: This is currently failing for the following reasons:
                         // - invalid utf8s

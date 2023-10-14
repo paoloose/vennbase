@@ -37,22 +37,28 @@ macro_rules! read_n_bytes {
     }};
 }
 
-/**
- * Read a line from a buffer until either an stop byte is found or the limit 'stop'
- * was reached.
- *
- * The difference between the usual read_until method is that this wraps the reader on
- * a reader.take adaptaer so you can set a limit on the number of bytes read.
- */
-pub fn read_string_until<S>(reader: &mut BufReader<S>, stop: u8, max_length: usize) -> io::Result<String>
+/// Read a line from a buffer until either an stop byte is found or the limit 'stop'
+/// was reached.
+///
+/// The difference between the usual read_until method is that this wraps the reader on
+/// a `reader.take` adapter so you can set a limit on the number of bytes read, preventing
+/// DOS attacks.
+///
+/// The returning string doesn't include the stop byte.
+///
+/// The second tuple element is a boolean indicating whether the EOF was reached
+/// and 0 bytes were read.
+pub fn read_string_until<S>(reader: &mut BufReader<S>, stop: u8, max_length: usize) -> io::Result<(String, bool)>
 where S: Read {
     let mut line = Vec::with_capacity(max_length);
     let mut handle = reader.take(max_length as u64);
-    handle.read_until(stop, &mut line)?;
-    Ok(
+
+    let n = handle.read_until(stop, &mut line)?;
+    Ok((
         String::from_utf8(line)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
             .trim_end_matches(stop as char)
-            .to_string()
-    )
+            .to_string(),
+        n == 0 // EOF
+    ))
 }
