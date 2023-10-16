@@ -184,7 +184,6 @@ impl Vennbase {
             );
         }
 
-        println!();
         Ok(Vennbase { path: path.into(), partitions })
     }
 

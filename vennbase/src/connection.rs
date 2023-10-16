@@ -19,15 +19,18 @@ macro_rules! write_to_socket {
 
 pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()> {
     let mut reader = BufReader::new(stream);
-
     // Each loop iteration represents a request
     loop {
+        println!("start looping");
         let (header, eof) = read_string_until(&mut reader, b'\n', MAX_REQUEST_QUERY_LENGTH)?;
+        println!("header: {header}");
         if eof { break; }
         if header.is_empty() { continue; }
 
         let mut header_iter = header.split(' ');
         let method = header_iter.next().unwrap_or_default();
+
+        println!("received method: {method}");
 
         match method {
             "query" => {
@@ -39,6 +42,10 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
                 match db.query_record(query.unwrap()) {
                     Ok(records) => {
                         let mut writer = BufWriter::new(stream);
+                        if records.len() == 0 {
+                            write_to_socket!(stream, "\n")?;
+                            continue;
+                        }
                         for record in records.iter() {
                             writer.write_all(
                                 format!("{:#?}\n", record).as_bytes()

@@ -20,6 +20,7 @@ fn main() -> io::Result<()> {
     let pool = ThreadPool::with_same_workers_as_cpus().unwrap();
 
     for stream in listener.incoming() {
+        println!("{stream:?}");
         match stream {
             Ok(conn) => {
                 let db = Arc::clone(&db);
@@ -31,6 +32,7 @@ fn main() -> io::Result<()> {
                         // - invalid utf8s
                         println!("err: {:#?}", result);
                     }
+                    println!("result: {result:?}");
                 });
             },
             Err(e) => {
