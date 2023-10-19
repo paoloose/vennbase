@@ -25,6 +25,11 @@ pub struct Partition {
     next_start: u64,
 }
 
+const HASHMAP_INITIAL_CAPACITY: usize = 128;
+// Each reacord header is 25 bytes long, setting the BufReader capacity to 32
+// improves the performance from ~25.49786663s to ~340.529302ms.
+const BUFFREADER_CAPACITY: usize = 32;
+
 const TIMESTAMP_SIZE_BYTES: u64 = 8;
 const PARTITION_HEADER_BYTES_OFFSET: u64 = TIMESTAMP_SIZE_BYTES + TIMESTAMP_SIZE_BYTES;
 
@@ -54,19 +59,21 @@ impl Partition {
         }
 
         let file = File::open(&file_path)?;
-        let mut reader = BufReader::new(file);
+        let mut reader = BufReader::with_capacity(BUFFREADER_CAPACITY, file);
+
         println!("  from {:#?}", file_path);
 
         // NOTE: should we implement a partition name?
-        // let partition_name = read_n_bytes_as_string!(&mut reader, 32).expect("Failed to read partition name");
-        let created_at = read_venn_timestamp!(&mut reader).expect("Failed to read creation timestamp");
-        let last_compaction = read_venn_timestamp!(&mut reader).expect("Failed to read last compaction timestamp");
+        let created_at = read_venn_timestamp!(&mut reader)?;
+        let last_compaction = read_venn_timestamp!(&mut reader)?;
 
         // Start reading the list of records
         // (skipping the partition header, since we already read it)
         // NOTE: we use a loop since we don't exactly know how many records there are
         let mut next_record_start = PARTITION_HEADER_BYTES_OFFSET;
-        let mut records: HashMap<uuid::Uuid, RecordInformation> = HashMap::with_capacity(8);
+        let mut records: HashMap<uuid::Uuid, RecordInformation> = HashMap::with_capacity(
+            HASHMAP_INITIAL_CAPACITY
+        );
 
         loop {
             let mut flags: [u8; 1] = [0];
@@ -76,7 +83,9 @@ impl Partition {
                 Err(err) => return Err(err)
             }
             let is_active = flags[0] & 0b10000000 != 0;
-            let record_id = uuid::Uuid::from_bytes(read_n_bytes!(&mut reader, 16)?);
+            let record_id = uuid::Uuid::from_bytes_le(
+                read_n_bytes!(&mut reader, RECORD_ID_SIZE_BYTES as usize)?
+            );
             let record_size = read_u64!(&mut reader)?;
 
             next_record_start += RECORD_HEADER_SIZE_BYTES;
@@ -89,10 +98,9 @@ impl Partition {
                 }
             );
             // Skip the {record_size} bytes of data
+            reader.seek(SeekFrom::Current(record_size as i64))?;
             next_record_start += record_size;
-            reader.seek(SeekFrom::Start(next_record_start))?;
         }
-
         println!("  with {} record(s)", records.len());
 
         // TODO: load the records from the file
