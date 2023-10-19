@@ -157,11 +157,11 @@ impl Vennbase {
 
     }
 
-    pub fn fetch_record_by_id(&self, record_id: &uuid::Uuid) -> io::Result<Option<BufferedRecord>> {
-        for (_mimetype, partition) in &self.partitions {
+    pub fn fetch_record_by_id(&self, record_id: &uuid::Uuid) -> io::Result<Option<(&MimeType, BufferedRecord)>> {
+        for (mimetype, partition) in &self.partitions {
             let reader = partition.fetch_record(record_id)?;
             match reader {
-                Some(record) => return Ok(Some(record)),
+                Some(reader) => return Ok(Some((mimetype, reader))),
                 _ => (),
             };
         }

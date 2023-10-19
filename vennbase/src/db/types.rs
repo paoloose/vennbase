@@ -46,6 +46,12 @@ impl std::fmt::Debug for MimeType {
     }
 }
 
+impl std::fmt::Display for MimeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0.as_str())
+    }
+}
+
 impl From<String> for MimeType {
     fn from(s: String) -> Self {
         MimeType(s)

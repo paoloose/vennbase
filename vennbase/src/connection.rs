@@ -21,16 +21,14 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
     let mut reader = BufReader::new(stream);
     // Each loop iteration represents a request
     loop {
-        println!("start looping");
         let (header, eof) = read_string_until(&mut reader, b'\n', MAX_REQUEST_QUERY_LENGTH)?;
-        println!("header: {header}");
         if eof { break; }
         if header.is_empty() { continue; }
 
         let mut header_iter = header.split(' ');
         let method = header_iter.next().unwrap_or_default();
 
-        println!("received method: {method}");
+        println!("\u{001b}[32m[REQ]\u{001b}[0m {header}");
 
         match method {
             "query" => {
@@ -71,20 +69,26 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
                 };
                 // When we fetch a record, we get a Take<BufReader<File>>
                 match db.fetch_record_by_id(&uuid)? {
-                    Some(mut reader) => {
+                    Some((mimetype, mut reader)) => {
+                        let size = reader.limit();
                         // Stream the reader to the socket
                         let mut writer = BufWriter::new(stream);
                         let mut buf = [0; 512];
-                        let mut n = 0;
+
+                        writer.write_all(
+                            format!("{} {}\n", mimetype, size).as_bytes()
+                        )?;
                         loop {
                             let bytes_read = reader.read(&mut buf)?;
                             if bytes_read == 0 { break; }
-                            n += bytes_read;
                             writer.write_all(&buf[0..bytes_read])?;
                         }
-                        println!("{} bytes read.", n);
+                        println!("{} bytes read.", size);
                     },
-                    None => todo!(),
+                    None => {
+                        write_to_socket!(stream, "NOT_FOUND 0\n")?;
+                        println!("Record not found.");
+                    },
                 }
             },
             "save" => {

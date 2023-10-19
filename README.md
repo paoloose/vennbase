@@ -66,7 +66,13 @@ get <id>
 Downloading a record with ID `f81d4fae-7dec-11d0-a765-00a0c91e6bf6`.
 
 ```bash
-venn <<< $'fetch f81d4fae-7dec-11d0-a765-00a0c91e6bf6' > ./data/image.png
+venn <<< $'get f81d4fae-7dec-11d0-a765-00a0c91e6bf6' | head -n +1
+# returns
+image/png 69524
+```
+
+```bash
+venn <<< $'get f81d4fae-7dec-11d0-a765-00a0c91e6bf6' | awk 'NR>1'
 ```
 
 ## Database and partitions
