@@ -13,9 +13,22 @@ alias venn="nc 127.0.0.1 1834 -qv"
 
 ### Creating a record with `save`
 
+Request:
+
 ```plain
 save <content-type> len=<len> tags=[...<tags>]
 <binary-data>
+```
+
+Response OK:
+
+```plain
+<empty>
+```
+
+Response Error:
+
+```plain
 ```
 
 **Examples:**
@@ -43,6 +56,15 @@ query skip=<n> limit=<m>
 <query>
 ```
 
+Response:
+
+```plain
+<uuid1>
+<uuid2>
+<uuid3>
+...
+```
+
 **Examples:**
 
 Retrieving the images and videos with tags pink and anime.
@@ -57,8 +79,26 @@ venn <<< $'query skip=20 limit=10 (tag:'pink' || tag:'anime') && (mime:image/* |
 
 ### Fetching records with `get`
 
+General request:
+
 ```plain
-get <id>
+get [<width | auto>x<height | auto>] <id>
+```
+
+Non-image types will ignore the `<width>x<height>` parameter.
+
+Response OK:
+
+```plain
+<mimetype> <size>
+<...data>
+```
+
+Response Not Found:
+
+```plain
+NOT_FOUND 0
+<empty>
 ```
 
 **Examples:**
@@ -72,7 +112,7 @@ image/png 69524
 ```
 
 ```bash
-venn <<< $'get f81d4fae-7dec-11d0-a765-00a0c91e6bf6' | awk 'NR>1'
+venn <<< $'get f81d4fae-7dec-11d0-a765-00a0c91e6bf6' | awk 'NR>1' > ./image.png
 ```
 
 ## Database and partitions

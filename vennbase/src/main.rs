@@ -4,6 +4,7 @@ pub mod db;
 pub mod query;
 pub mod pool;
 pub mod connection;
+pub mod features;
 
 use std::io;
 use std::net::TcpListener;
