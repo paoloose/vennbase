@@ -83,7 +83,7 @@ impl Partition {
                 Err(err) => return Err(err)
             }
             let is_active = flags[0] & 0b10000000 != 0;
-            let record_id = uuid::Uuid::from_bytes_le(
+            let record_id = uuid::Uuid::from_bytes(
                 read_n_bytes!(&mut reader, RECORD_ID_SIZE_BYTES as usize)?
             );
             let record_size = read_u64!(&mut reader)?;
