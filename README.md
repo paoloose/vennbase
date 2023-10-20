@@ -29,6 +29,7 @@ Response OK:
 Response Error:
 
 ```plain
+ERROR
 ```
 
 **Examples:**

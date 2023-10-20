@@ -13,6 +13,13 @@ impl VennTimestamp {
 #[derive(Eq, Hash, PartialEq, Clone)]
 pub struct MimeType(String);
 
+#[derive(Debug)]
+pub struct InvalidMimeType;
+
+pub const MIN_MIMETYPE_LENGTH: usize = 3;
+pub const MAX_MIMETYPE_LENGTH: usize = 255;
+pub const VALID_MIMETYPE_CHARS: &str = "abcdefghijklmnopqrstuvwxyz0123456789-+/";
+
 impl MimeType {
     pub fn from_base64_filename(path: &OsStr) -> io::Result<Self> {
         use base64::Engine;
@@ -21,12 +28,30 @@ impl MimeType {
             io::Error::new(io::ErrorKind::InvalidData, "Invalid file name")
         )?.to_string();
 
-        let decoded_mimetype = base64::engine::general_purpose::STANDARD_NO_PAD.decode(filename)
+        let decoded_mimetype = base64::engine::general_purpose::STANDARD_NO_PAD
+            .decode(filename)
             .map(String::from_utf8)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
         Ok(MimeType(decoded_mimetype))
+    }
+
+    pub fn from(mimetype: &str) -> Result<Self, InvalidMimeType> {
+        let mimetype = mimetype.to_ascii_lowercase();
+
+        if mimetype.len() < MIN_MIMETYPE_LENGTH || mimetype.len() > MAX_MIMETYPE_LENGTH {
+            return Err(InvalidMimeType);
+        }
+        if mimetype.find('/').is_none() || mimetype.find('/') == mimetype.rfind('/') {
+            return Err(InvalidMimeType);
+        }
+        if mimetype.chars().all(|c| VALID_MIMETYPE_CHARS.contains(c)) {
+            Ok(MimeType(mimetype))
+        }
+        else {
+            Err(InvalidMimeType)
+        }
     }
 
     pub fn to_base64_pathname(&self) -> String {
@@ -63,4 +88,3 @@ impl From<&str> for MimeType {
         MimeType(value.to_string())
     }
 }
-

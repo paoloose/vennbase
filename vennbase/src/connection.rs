@@ -4,11 +4,11 @@ use std::str::FromStr;
 
 use image::ImageFormat;
 
+use crate::db::types::MimeType;
 use crate::db::vennbase::Vennbase;
 use crate::features::resize::{resize_image, Dimensions, is_resizeable_format};
 use crate::utils::reading::read_string_until;
 
-const MAX_MIME_TYPE_LENGTH: usize = 255;
 const MAX_REQUEST_QUERY_LENGTH: usize = 1024;
 
 macro_rules! write_to_socket {
@@ -142,21 +142,19 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
             },
             "save" => {
                 let mimetype = header_iter.next().unwrap_or_default();
-                if mimetype.is_empty() {
-                    write_to_socket!(stream, "No mimetype provided\n")?;
-                    continue;
-                }
-                if mimetype.len() > MAX_MIME_TYPE_LENGTH {
-                    write_to_socket!(stream, "Mimetype too long\n")?;
-                    continue;
-                }
+                match MimeType::from(mimetype) {
+                    Ok(mimetype) => {
+                        let mut data = Vec::with_capacity(1024);
+                        reader.read_to_end(&mut data)?;
 
-                let mut data = Vec::with_capacity(512);
-                reader.read_to_end(&mut data)?;
-
-                let uuid = db.save_record(&mimetype.into(), data.as_slice())?;
-                write_to_socket!(stream, "{uuid}")?;
-                println!("Saving record {uuid} with len {:#?}", data.len());
+                        let uuid = db.save_record(&mimetype, data.as_slice())?;
+                        write_to_socket!(stream, "{uuid}")?;
+                        println!("Saving record {uuid} with len {:#?}", data.len());
+                    },
+                    Err(_) => {
+                        write_to_socket!(stream, "ERROR")?;
+                    },
+                }
             },
             "del" => {
                 // TODO: read id
