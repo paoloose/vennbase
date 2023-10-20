@@ -22,7 +22,7 @@ use crate::db::types::MimeType;
 #[derive(Debug)]
 enum Resize {
     Auto,
-    Dimension(u32),
+    Dimension(NonZeroU32),
 }
 
 #[derive(Debug)]
@@ -37,13 +37,19 @@ impl Dimensions {
         let width = match width {
             "auto" => Resize::Auto,
             num => {
-                Resize::Dimension(num.parse::<u32>().map_err(|_| DimensionParsingError)?)
+                let num = num.parse::<u32>().map(NonZeroU32::new)
+                    .map_err(|_| DimensionParsingError)?
+                    .ok_or(DimensionParsingError)?;
+                Resize::Dimension(num)
             },
         };
         let height = match height {
             "auto" => Resize::Auto,
             num => {
-                Resize::Dimension(num.parse::<u32>().map_err(|_| DimensionParsingError)?)
+                let num = num.parse::<u32>().map(NonZeroU32::new)
+                    .map_err(|_| DimensionParsingError)?
+                    .ok_or(DimensionParsingError)?;
+                Resize::Dimension(num)
             },
         };
 
@@ -156,17 +162,17 @@ pub fn resize_image(data: &Vec<u8>, format: ImageFormat, new_dims: &Dimensions) 
                     (NonZeroU32::new(width).unwrap(), NonZeroU32::new(height).unwrap())
                 },
                 Resize::Dimension(h) => {
-                    let w = (h as f32 * aspect_ratio) as u32;
-                    (NonZeroU32::new(w).unwrap(), NonZeroU32::new(h).unwrap())
+                    let w = NonZeroU32::new((h.get() as f32 * aspect_ratio) as u32).unwrap();
+                    (w, h)
                 },
             }
         },
         Resize::Dimension(h) => {
             let w = match new_dims.1 {
-                Resize::Auto => (h as f32 * aspect_ratio) as u32,
+                Resize::Auto => NonZeroU32::new((h.get() as f32 * aspect_ratio) as u32).unwrap(),
                 Resize::Dimension(h2) => h2,
             };
-            (NonZeroU32::new(w).unwrap(), NonZeroU32::new(h).unwrap())
+            (w, h)
         },
     };
     let mut dst_image = fr::Image::new(
