@@ -10,7 +10,7 @@ pub fn parse_query(query: &str) -> logic_parser::parsing::Result<ASTNode> {
         |c| c.is_alphabetic(),
     );
 
-    let tokens = lexer.tokenize(query).map_err(|e| <LexerError as Into<ParserError>>::into(e))?;
+    let tokens = lexer.tokenize(query).map_err(<LexerError as Into<ParserError>>::into)?;
 
     let mut parser = Parser::new(&tokens);
     parser.parse()
@@ -95,7 +95,10 @@ impl<'a> Iterator for VariablesPermutations<'a> {
     }
 }
 
-pub fn evaluate(tree: &ASTNode, values: &HashMap<String, bool>) -> Result<bool, ()> {
+#[derive(Debug)]
+pub struct EvaluationError;
+
+pub fn evaluate(tree: &ASTNode, values: &HashMap<String, bool>) -> Result<bool, EvaluationError> {
     match tree {
         ASTNode::Not { operand } => {
             Ok(!evaluate(operand, values)?)

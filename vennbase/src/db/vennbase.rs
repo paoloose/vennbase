@@ -115,14 +115,14 @@ impl Vennbase {
             // Evaluate each record on every partition. MimeType doesnt matter
         for (mimetype, partition) in &self.partitions {
             for (uuid, _) in partition.iter_active_records() {
-                let matches = evaluate(&parsed_query, mimetype, &uuid)
+                let matches = evaluate(&parsed_query, mimetype, uuid)
                     .map_err(|_| VennbaseError("Failed to evaluate".into()))?;
                 if matches {
-                    matched_records.push(&uuid);
+                    matched_records.push(uuid);
                 }
             }
         }
-        return Ok(matched_records);
+        Ok(matched_records)
         // }
 
         // At this point, since the query contains some MimeType criteria, we have the
@@ -160,10 +160,9 @@ impl Vennbase {
     pub fn fetch_record_by_id(&self, record_id: &uuid::Uuid) -> io::Result<Option<(&MimeType, BufferedRecord)>> {
         for (mimetype, partition) in &self.partitions {
             let reader = partition.fetch_record(record_id)?;
-            match reader {
-                Some(reader) => return Ok(Some((mimetype, reader))),
-                _ => (),
-            };
+            if let Some(reader) = reader {
+                return Ok(Some((mimetype, reader)))
+            }
         }
         Ok(None)
     }

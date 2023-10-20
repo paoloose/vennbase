@@ -20,8 +20,10 @@ pub type BufferedRecord = io::Take<BufReader<File>>;
 pub struct Partition {
     file_path: PathBuf,
     records: HashMap<uuid::Uuid, RecordInformation>,
+    #[allow(dead_code)]
     created_at: VennTimestamp,
-    last_compaction: VennTimestamp,
+    #[allow(dead_code)]
+    last_compaction: VennTimestamp, // TODO: implement compaction
     next_start: u64,
 }
 
@@ -61,7 +63,7 @@ impl Partition {
         let file = File::open(&file_path)?;
         let mut reader = BufReader::with_capacity(BUFFREADER_CAPACITY, file);
 
-        println!("  from {:#?}", file_path);
+        println!("  from {file_path:?}");
 
         // NOTE: should we implement a partition name?
         let created_at = read_venn_timestamp!(&mut reader)?;
@@ -146,9 +148,9 @@ impl Partition {
             .open(&self.file_path)?;
 
         let mut writer = BufWriter::new(file);
-        writer.write(&[1 << 7])?;
-        writer.write(uuid.as_bytes())?;
-        writer.write((data.len() as u64).to_le_bytes().as_slice())?;
+        writer.write_all(&[1 << 7])?;
+        writer.write_all(uuid.as_bytes())?;
+        writer.write_all((data.len() as u64).to_le_bytes().as_slice())?;
         writer.write_all(data)?;
 
         self.records.insert(

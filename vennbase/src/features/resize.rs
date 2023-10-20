@@ -28,19 +28,22 @@ enum Resize {
 #[derive(Debug)]
 pub struct Dimensions(Resize, Resize);
 
+#[derive(Debug)]
+pub struct DimensionParsingError;
+
 impl Dimensions {
-    pub fn from_str(resize_str: &str) -> Result<Self, ()> {
-        let (width, height) = resize_str.split_once('x').ok_or(())?;
+    pub fn from_dim_str(resize_str: &str) -> Result<Self, DimensionParsingError> {
+        let (width, height) = resize_str.split_once('x').ok_or(DimensionParsingError)?;
         let width = match width {
             "auto" => Resize::Auto,
             num => {
-                Resize::Dimension(num.parse::<u32>().map_err(|_| ())?)
+                Resize::Dimension(num.parse::<u32>().map_err(|_| DimensionParsingError)?)
             },
         };
         let height = match height {
             "auto" => Resize::Auto,
             num => {
-                Resize::Dimension(num.parse::<u32>().map_err(|_| ())?)
+                Resize::Dimension(num.parse::<u32>().map_err(|_| DimensionParsingError)?)
             },
         };
 
@@ -113,10 +116,9 @@ fn encode_image_with_format(image_buffer: &[u8], dims: (u32, u32), format: Image
 
 pub fn is_resizeable_format(mimetype: &MimeType) -> bool {
     match ImageFormat::from_mime_type(mimetype.as_str()) {
-        Some(format) => match format {
-            ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::WebP | ImageFormat::Bmp => true,
-            _ => false,
-        },
+        Some(format) => matches!(format,
+            ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::WebP | ImageFormat::Bmp
+        ),
         None => false,
     }
 }
@@ -126,7 +128,7 @@ pub fn is_resizeable_format(mimetype: &MimeType) -> bool {
 /// # Panics
 /// If any of the given size is zero
 ///
-pub fn resize_image<'a>(data: &Vec<u8>, format: ImageFormat, new_dims: &Dimensions) -> Result<Vec<u8>, ResizeError> {
+pub fn resize_image(data: &Vec<u8>, format: ImageFormat, new_dims: &Dimensions) -> Result<Vec<u8>, ResizeError> {
     // Read source image from file
     let img = ImageReader::with_format(Cursor::new(data), format).decode()?;
     let (width, height) = (img.width(), img.height());
@@ -226,7 +228,7 @@ mod tests {
         let image = resize_image(
             &data,
             ImageFormat::Png,
-            &Dimensions::from_str("200xauto").unwrap()
+            &Dimensions::from_dim_str("200xauto").unwrap()
         ).unwrap();
 
         assert!(image.len() > 0);

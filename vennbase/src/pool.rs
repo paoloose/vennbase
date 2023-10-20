@@ -1,7 +1,7 @@
 use std::thread::{self, JoinHandle};
 use std::sync::{mpsc, Arc, Mutex};
 
-type Job = Box<dyn Send + 'static + FnOnce() -> ()>;
+type Job = Box<dyn Send + 'static + FnOnce()>;
 
 struct Worker {
     // receiver: Arc<Mutex<mpsc::Receiver<Job>>>,
@@ -16,6 +16,7 @@ pub struct ThreadPool {
 }
 
 impl Worker {
+    #[allow(clippy::while_let_loop)]
     fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Self {
         let thread = thread::spawn(move || loop {
             match receiver.lock().unwrap().recv() {
@@ -51,7 +52,7 @@ impl ThreadPool {
     /// There is no guarantee that the job will be executed immediately.
     /// Any free worker is able to take the job and execute it.
     pub fn run<F>(&self, job: F)
-    where F: FnOnce() -> () + Send + 'static
+    where F: FnOnce() + Send + 'static
     {
         let job = Box::new(job);
         self.sender.as_ref().unwrap().send(job).expect("Receiver channel is still opened");

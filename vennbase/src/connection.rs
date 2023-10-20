@@ -24,6 +24,7 @@ macro_rules! write_to_socket {
 ///
 /// This function only fail on unrecoverable socket errors. Input/Validation errors doesn't destroy
 /// the communication with the client.
+#[allow(clippy::unnecessary_unwrap)]
 pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()> {
     let mut reader = BufReader::new(stream);
     // Each loop iteration represents a request
@@ -47,7 +48,7 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
                 match db.query_record(query.unwrap()) {
                     Ok(records) => {
                         let mut writer = BufWriter::new(stream);
-                        if records.len() == 0 {
+                        if records.is_empty() {
                             write_to_socket!(stream, "\n")?;
                             continue;
                         }
@@ -72,7 +73,7 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
                 };
                 let id = match header_iter.next() {
                     Some(id) => {
-                        resize_dims = Some(Dimensions::from_str(resize_str).map_err(|_| {
+                        resize_dims = Some(Dimensions::from_dim_str(resize_str).map_err(|_| {
                             io::Error::new(
                                 io::ErrorKind::InvalidInput,
                                 "Invalid resize dimensions"
