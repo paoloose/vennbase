@@ -73,13 +73,10 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
                 };
                 let id = match header_iter.next() {
                     Some(id) => {
-                        resize_dims = Some(Dimensions::from_dim_str(resize_str).map_err(|_| {
-                            io::Error::new(
-                                io::ErrorKind::InvalidInput,
-                                "Invalid resize dimensions"
-                            )
-                        })?); // FIXME: send message instead of quitting
-                        // FIXME: resize_dims must be valid
+                        // Just ignore invalid dimension specifiers
+                        if let Ok(dimensions) = Dimensions::from_dim_str(resize_str) {
+                            resize_dims = Some(dimensions);
+                        }
                         id
                     },
                     None => resize_str
@@ -101,30 +98,33 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
 
                         // If we need to resize the image
                         if is_resizeable_format(mimetype) && resize_dims.is_some() {
-                            let dims = resize_dims.unwrap();
+                            let new_dimensions = resize_dims.unwrap();
                             // Load the entire image into memory
                             let mut data = Vec::with_capacity(size as usize);
                             reader.read_to_end(&mut data)?;
-                            // MIMEtype should be valid at this point
-                            let data = resize_image(
+                            let resize_result = resize_image(
                                 &data,
+                                // MIMEtype should be valid at this point
                                 ImageFormat::from_mime_type(mimetype.as_str()).unwrap(),
-                                &dims
-                            ).unwrap();
+                                &new_dimensions
+                            );
+                            let data = match resize_result {
+                                Ok(data) => data,
+                                Err(_) => {
+                                    writer.write_all(b"ERROR 0\n")?;
+                                    continue;
+                                },
+                            };
                             size = data.len() as u64;
 
-                            writer.write_all(
-                                format!("{} {}\n", mimetype, size).as_bytes()
-                            )?;
+                            writer.write_all(format!("{} {}\n", mimetype, size).as_bytes())?;
                             writer.write_all(data.as_slice())?;
                         }
                         // Otherwise, send the image as it is
                         else {
                             // No processing needed, just stream the reader to the socket
                             let mut buf = [0; 1024];
-                            writer.write_all(
-                                format!("{} {}\n", mimetype, size).as_bytes()
-                            )?;
+                            writer.write_all(format!("{} {}\n", mimetype, size).as_bytes())?;
                             loop {
                                 let bytes_read = reader.read(&mut buf)?;
                                 if bytes_read == 0 { break; }

@@ -119,7 +119,7 @@ pub fn evaluate(tree: &ASTNode, values: &HashMap<String, bool>) -> Result<bool, 
             Ok(*value)
         },
         ASTNode::Identifier { name } => {
-            Ok(*values.get(name).unwrap())
+            Ok(*values.get(name).expect("The variable to exist"))
         },
     }
 }

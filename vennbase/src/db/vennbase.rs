@@ -193,7 +193,7 @@ impl Vennbase {
     fn create_new_partition(&mut self, mimetype: MimeType) -> io::Result<&mut Partition> {
         let partition_path = self.path.join(mimetype.to_base64_pathname());
         assert!(!partition_path.exists());
-        println!("New partition: {}", partition_path.to_str().unwrap());
+        println!("New partition: {partition_path:?}");
         // File creation is done with `write: true`, `create: true`, `truncate: true`
         // So the only error we can get is either a permission error, or to a database
         // doesn't exist error. Both are fatal.

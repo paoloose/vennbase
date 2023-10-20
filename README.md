@@ -94,10 +94,17 @@ Response OK:
 <...data>
 ```
 
-Response Not Found:
+Response when record doesn't exist:
 
 ```plain
 NOT_FOUND 0
+<empty>
+```
+
+Response on error:
+
+```plain
+ERROR 0
 <empty>
 ```
 

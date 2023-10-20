@@ -1,8 +1,8 @@
-use std::io::BufWriter;
+use std::io::{BufWriter, IntoInnerError};
 use std::{num::NonZeroU32, io::Cursor};
 
 use fast_image_resize as fr;
-use fr::ImageBufferError;
+use fr::{ImageBufferError, MulDivImageError, DifferentTypesOfPixelsError};
 use image::error::{UnsupportedError, ImageFormatHint, UnsupportedErrorKind};
 use image::{ColorType, ImageEncoder, ImageResult};
 use image::{
@@ -61,7 +61,10 @@ impl Dimensions {
 pub enum ResizeError {
     BufferError(ImageBufferError),
     IoError(std::io::Error),
-    ImageError(ImageError)
+    ImageError(ImageError),
+    MulDivImageError(MulDivImageError),
+    DifferentTypesOfPixelsError(DifferentTypesOfPixelsError),
+    BufferFlushError(IntoInnerError<BufWriter<Vec<u8>>>)
 }
 
 fn encode_image_with_format(image_buffer: &[u8], dims: (u32, u32), format: ImageFormat) -> ImageResult<BufWriter<Vec<u8>>> {
@@ -129,6 +132,7 @@ pub fn is_resizeable_format(mimetype: &MimeType) -> bool {
     }
 }
 
+
 /// Interpretes a well-formed set of bytes, guessing its  image by using the fast_image_resize crate
 ///
 /// # Panics
@@ -137,11 +141,14 @@ pub fn is_resizeable_format(mimetype: &MimeType) -> bool {
 pub fn resize_image(data: &Vec<u8>, format: ImageFormat, new_dims: &Dimensions) -> Result<Vec<u8>, ResizeError> {
     // Read source image from file
     let img = ImageReader::with_format(Cursor::new(data), format).decode()?;
-    let (width, height) = (img.width(), img.height());
+    let (width, height) = (
+        NonZeroU32::new(img.width()).expect("To be positive"),
+        NonZeroU32::new(img.height()).expect("To be positive")
+    );
 
     let mut src_image = fr::Image::from_vec_u8(
-        NonZeroU32::new(width).unwrap(),
-        NonZeroU32::new(height).unwrap(),
+        width,
+        height,
         img.to_rgba8().into_raw(),
         fr::PixelType::U8x4,
     )?;
@@ -151,25 +158,27 @@ pub fn resize_image(data: &Vec<u8>, format: ImageFormat, new_dims: &Dimensions) 
     let alpha_mul_div = fr::MulDiv::default();
     alpha_mul_div
         .multiply_alpha_inplace(&mut src_image.view_mut())
-        .unwrap();
+        .map_err(ResizeError::MulDivImageError)?;
 
     let aspect_ratio = img.width() as f32 / img.height() as f32;
     // Create container for data of destination image
     let (dst_width, dst_height) = match new_dims.0 {
         Resize::Auto => {
             match new_dims.1 {
-                Resize::Auto => {
-                    (NonZeroU32::new(width).unwrap(), NonZeroU32::new(height).unwrap())
-                },
+                Resize::Auto => (width, height), // 'autoxauto' has no effect
                 Resize::Dimension(h) => {
-                    let w = NonZeroU32::new((h.get() as f32 * aspect_ratio) as u32).unwrap();
+                    let w = NonZeroU32::new((h.get() as f32 * aspect_ratio) as u32).unwrap_or(
+                        NonZeroU32::new(1).unwrap()
+                    );
                     (w, h)
                 },
             }
         },
         Resize::Dimension(h) => {
             let w = match new_dims.1 {
-                Resize::Auto => NonZeroU32::new((h.get() as f32 * aspect_ratio) as u32).unwrap(),
+                Resize::Auto => NonZeroU32::new((h.get() as f32 * aspect_ratio) as u32).unwrap_or(
+                    NonZeroU32::new(1).unwrap()
+                ),
                 Resize::Dimension(h2) => h2,
             };
             (w, h)
@@ -186,16 +195,18 @@ pub fn resize_image(data: &Vec<u8>, format: ImageFormat, new_dims: &Dimensions) 
 
     // Create Resizer instance and resize source image
     // into buffer of destination image
-    let mut resizer = fr::Resizer::new(
-        fr::ResizeAlg::Convolution(fr::FilterType::Box),
-    );
-    resizer.resize(&src_image.view(), &mut dst_view).unwrap();
+    let mut resizer = fr::Resizer::new(fr::ResizeAlg::Nearest);
+    resizer.resize(&src_image.view(), &mut dst_view)
+        .map_err(ResizeError::DifferentTypesOfPixelsError)?;
 
     // Divide RGB channels of destination image by alpha
-    alpha_mul_div.divide_alpha_inplace(&mut dst_view).unwrap();
+    alpha_mul_div.divide_alpha_inplace(&mut dst_view)
+        .map_err(ResizeError::MulDivImageError)?;
 
     match encode_image_with_format(dst_image.buffer(), (dst_width.into(), dst_height.into()),format) {
-        Ok(img_buffer) => Ok(img_buffer.into_inner().unwrap()),
+        Ok(img_buffer) => Ok(
+            img_buffer.into_inner().map_err(ResizeError::BufferFlushError)?
+        ),
         Err(e) => Err(ResizeError::ImageError(e)),
     }
 }
