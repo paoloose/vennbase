@@ -16,7 +16,10 @@ alias venn="nc 127.0.0.1 1834 -qv"
 Request:
 
 ```plain
-save <content-type> len=<len> tags=[...<tags>]
+save <content-type> [...<tags>]
+len: len
+age: 20
+purity: nsfw
 <binary-data>
 ```
 
@@ -57,13 +60,22 @@ query skip=<n> limit=<m>
 <query>
 ```
 
-Response:
+Response OK:
 
 ```plain
-<uuid1>
-<uuid2>
-<uuid3>
+OK <n>
+<uuid-1>
+<uuid-2>
+<uuid-3>
 ...
+<uuid-n>
+```
+
+Response Error:
+
+```plain
+ERROR 0
+<empty>
 ```
 
 **Examples:**
@@ -83,7 +95,7 @@ venn <<< $'query skip=20 limit=10 (tag:'pink' || tag:'anime') && (mime:image/* |
 General request:
 
 ```plain
-get [<width | auto>x<height | auto>] <id>
+get [<width|auto>x<height|auto>] <id>
 ```
 
 Non-image types will ignore the `<width>x<height>` parameter.
@@ -111,7 +123,7 @@ ERROR 0
 
 **Examples:**
 
-Downloading a record with ID `f81d4fae-7dec-11d0-a765-00a0c91e6bf6`.
+Downloading a record with ID `f81d4fae-7dec-11d0-a765-00a0c91e6bf6` but ignoring the body.
 
 ```bash
 venn <<< $'get f81d4fae-7dec-11d0-a765-00a0c91e6bf6' | head -n +1
@@ -121,6 +133,35 @@ image/png 69524
 
 ```bash
 venn <<< $'get f81d4fae-7dec-11d0-a765-00a0c91e6bf6' | awk 'NR>1' > ./image.png
+```
+
+### Obtaining the record metadata with `meta`
+
+Record metadata consists on the record tags list, and pre-defined metadata.
+Record Mime Type is also returned.
+
+```plain
+meta <id>
+```
+
+Response OK:
+
+```plain
+OK <mimetype> <tags-number>
+<...n-tags>
+<...metadata>
+```
+
+Response Not Found
+
+```plain
+NOT_FOUND
+```
+
+Response Error
+
+```plain
+ERROR
 ```
 
 ## Database and partitions
@@ -133,17 +174,15 @@ following structure:
 | 16 bytes | A version string with the form `vennbase@version` |
 | 32 bytes | The Database name                                 |
 | 64 bits  | Database creation [timestamp](#timestamps)        |
-|          |                                                   |
 
 Database partitions are represented as `.vennpart` files in the same directory as the `.vennbase`
 database. Each partition represents a different content type of multimedia.
 
-| Length    | Content                                            |
-| --------- | -------------------------------------------------- |
-| 64 bits   | Partition creation [timestamp](#timestamps)        |
-| 64 bits   | Last partition compaction [timestamp](#timestamps) |
-| —         | List of record structures                          |
-|           |                                                    |
+| Length  | Content                                            |
+| ------- | -------------------------------------------------- |
+| 64 bits | Partition creation [timestamp](#timestamps)        |
+| 64 bits | Last partition compaction [timestamp](#timestamps) |
+| —       | List of record structures                          |
 
 Where each record structure has the following structure:
 
@@ -154,7 +193,6 @@ Where each record structure has the following structure:
 | 16 bytes  | The ID (UUID v4) of the record                           |
 | 64 bits   | Unsigned record length (`l`) in bytes                    |
 | `l` bytes | The actual record data                                   |
-|           |                                                          |
 
 Inactive records will be deleted in the next database compaction.
 

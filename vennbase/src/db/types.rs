@@ -18,7 +18,7 @@ pub struct InvalidMimeType;
 
 pub const MIN_MIMETYPE_LENGTH: usize = 3;
 pub const MAX_MIMETYPE_LENGTH: usize = 255;
-pub const VALID_MIMETYPE_CHARS: &str = "abcdefghijklmnopqrstuvwxyz0123456789-+/";
+pub const VALID_MIMETYPE_CHARS: &str = "abcdefghijklmnopqrstuvwxyz0123456789-+./";
 
 impl MimeType {
     pub fn from_base64_filename(path: &OsStr) -> io::Result<Self> {
@@ -43,7 +43,7 @@ impl MimeType {
         if mimetype.len() < MIN_MIMETYPE_LENGTH || mimetype.len() > MAX_MIMETYPE_LENGTH {
             return Err(InvalidMimeType);
         }
-        if mimetype.find('/').is_none() || mimetype.find('/') == mimetype.rfind('/') {
+        if mimetype.find('/').is_none() || mimetype.find('/') != mimetype.rfind('/') {
             return Err(InvalidMimeType);
         }
         if mimetype.chars().all(|c| VALID_MIMETYPE_CHARS.contains(c)) {

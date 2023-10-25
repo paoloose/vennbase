@@ -45,21 +45,27 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
                     write_to_socket!(stream, "No query provided\n")?;
                     continue;
                 }
-                match db.query_record(query.unwrap()) {
+                match db.query_records(query.unwrap()) {
                     Ok(records) => {
-                        let mut writer = BufWriter::new(stream);
                         if records.is_empty() {
-                            write_to_socket!(stream, "\n")?;
+                            write_to_socket!(stream, "OK 0\n")?;
                             continue;
                         }
+                        let mut writer = BufWriter::new(stream);
+                        writer.write_all(
+                            format!("OK {}\n", records.len()).as_bytes()
+                        )?;
                         for record in records.iter() {
                             writer.write_all(
-                                format!("{:#?}\n", record).as_bytes()
+                                format!("{record:?}\n").as_bytes()
                             )?;
                         }
                         println!("{} record(s) queried.", records.len());
                     },
-                    Err(e) => println!("Error(get): {:?}", e),
+                    Err(e) => {
+                        println!("Error(query): {:?}", e);
+                        write_to_socket!(stream, "ERROR 0\n")?;
+                    },
                 }
             },
             "get" => {
@@ -144,6 +150,7 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
                 let mimetype = header_iter.next().unwrap_or_default();
                 match MimeType::from(mimetype) {
                     Ok(mimetype) => {
+                        println!("Valid mimetype: {}", mimetype);
                         let mut data = Vec::with_capacity(1024);
                         reader.read_to_end(&mut data)?;
 
@@ -152,6 +159,7 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
                         println!("Saving record {uuid} with len {:#?}", data.len());
                     },
                     Err(_) => {
+                        println!("Invalid mimetype: {}", mimetype);
                         write_to_socket!(stream, "ERROR")?;
                     },
                 }

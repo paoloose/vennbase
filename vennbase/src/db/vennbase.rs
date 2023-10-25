@@ -1,11 +1,13 @@
 use core::panic;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, prelude::*, BufWriter};
+use std::io::{self, prelude::*, BufWriter, BufReader};
 use std::fs;
 use std::path::PathBuf;
 
 use logic_parser::parsing::ASTNode;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 use crate::db::types::VennTimestamp;
 use crate::db::types::MimeType;
@@ -14,13 +16,60 @@ use crate::query::parse_query;
 
 use super::partition::BufferedRecord;
 
+#[serde_as]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InvertedIndexMap {
+    #[serde_as(as = "Vec<(_, _)>")]
+    map: HashMap<String, Vec<String>>,
+    #[serde(skip)]
+    path: PathBuf,
+}
+
+impl InvertedIndexMap {
+    fn flush_data(&self) -> io::Result<()> {
+        let file = File::create(&self.path)?;
+        let mut writer = BufWriter::new(file);
+        let serialized_map = serde_json::to_string(&self).unwrap();
+        writer.write_all(serialized_map.as_bytes())?;
+        Ok(())
+    }
+
+    pub fn add_tag(&mut self, tag: &str, record_id: uuid::Uuid) {
+        let tag = tag.to_owned();
+        let record_id = record_id.to_string();
+        if self.map.contains_key(&tag) {
+            let records = self.map.get_mut(&tag).unwrap();
+            if !records.contains(&record_id) {
+                records.push(record_id);
+            }
+        }
+        else {
+            self.map.insert(tag, vec![record_id]);
+        }
+        self.flush_data().unwrap(); // FIXME: handle error
+    }
+
+    pub fn remove_tag(&mut self, tag: &str, record_id: uuid::Uuid) {
+        let tag = tag.to_owned();
+        let record_id = record_id.to_string();
+        if self.map.contains_key(&tag) {
+            let records = self.map.get_mut(&tag).unwrap();
+            if let Some(index) = records.iter().position(|r| r == &record_id) {
+                records.remove(index);
+            }
+        }
+        self.flush_data().unwrap(); // FIXME: handle error
+    }
+}
+
 /// A venbase database instance.
 ///
 /// Conceptually, you can think of a database as a universe from Set Theory,
 /// partitioned by content type, where each element of a partitions is called a record.
 pub struct Vennbase {
     path: PathBuf,
-    partitions: HashMap<MimeType, Partition>
+    partitions: HashMap<MimeType, Partition>,
+    tags: InvertedIndexMap,
 }
 
 #[derive(Debug)]
@@ -34,10 +83,22 @@ impl Vennbase {
                 return Ok(tree);
             }
             Err(e) => panic!("Couldn't create database directory: {:#?}", e),
-            Ok(_) => {},
-        }
+            Ok(_) => {
+                // create a .map file
+                let map_path = PathBuf::from(path).join(".map");
+                let file = File::create(map_path.clone())?;
+                let mut writer = BufWriter::new(file);
+                let tags_map = InvertedIndexMap { map: HashMap::new(), path: map_path.clone() };
+                let serialized_map = serde_json::to_string(&tags_map).unwrap();
+                writer.write_all(serialized_map.as_bytes())?;
 
-        Ok(Vennbase { path: path.into(), partitions: HashMap::new() })
+                Ok(Vennbase {
+                    path: path.into(),
+                    partitions: HashMap::new(),
+                    tags: tags_map
+                })
+            },
+        }
     }
 
     /// Saves a new record the database and returns its UUID.
@@ -56,29 +117,29 @@ impl Vennbase {
         unimplemented!("Replacing record with id: {} with data: {:#?}", id, data.len());
     }
 
-    pub fn query_record(&self, query: &str) -> Result<Vec<&uuid::Uuid>, VennbaseError> {
+    pub fn query_records(&self, query: &str) -> Result<Vec<&uuid::Uuid>, VennbaseError> {
         let parsed_query = parse_query(query)
             .map_err(|_| VennbaseError("Invalid query".into()))?;
         // FIXME: this need to be optimized. maybe using the Shunting yard algorithm?
         // https://en.wikipedia.org/wiki/Shunting_yard_algorithm
         let mut matched_records = Vec::<&uuid::Uuid>::with_capacity(4); // lucky number
 
-        fn evaluate(node: &ASTNode, mime: &MimeType, id: &uuid::Uuid) -> Result<bool, ()> {
+        fn evaluate(db: &Vennbase, node: &ASTNode, mime: &MimeType, id: &uuid::Uuid) -> Result<bool, ()> {
             match node {
                 ASTNode::Not { operand } => {
-                    Ok(!evaluate(operand, mime, id)?)
+                    Ok(!evaluate(db, operand, mime, id)?)
                 },
                 ASTNode::And { left, right } => {
-                    Ok(evaluate(left, mime, id)? && evaluate(right, mime, id)?)
+                    Ok(evaluate(db, left, mime, id)? && evaluate(db, right, mime, id)?)
                 },
                 ASTNode::Or { left, right } => {
-                    Ok(evaluate(left, mime, id)? || evaluate(right, mime, id)?)
+                    Ok(evaluate(db, left, mime, id)? || evaluate(db, right, mime, id)?)
                 },
                 ASTNode::Implies { left, right } => {
-                    Ok(!evaluate(left, mime, id)? || evaluate(right, mime, id)?)
+                    Ok(!evaluate(db, left, mime, id)? || evaluate(db, right, mime, id)?)
                 },
                 ASTNode::IfAndOnlyIf { left, right } => {
-                    Ok(evaluate(left, mime, id)? == evaluate(right, mime, id)?)
+                    Ok(evaluate(db, left, mime, id)? == evaluate(db, right, mime, id)?)
                 },
                 ASTNode::Literal { value } => {
                     Ok(*value)
@@ -92,17 +153,20 @@ impl Vennbase {
                     }
                     // Due to the checks, `filter` and `name` must be valid strings at this point
                     let (filter_name, filter) = expression.split_at(colon_i + 1);
-                    if filter == "*" {
-                        return Ok(true);
-                    }
+
+                    println!("filter_name: {:#?}, filter: {:#?}", filter_name, filter);
 
                     let result = match filter_name {
-                        "tag:" => true, // TODO: Implement tag system
-                        "mime:" => filter == mime.as_str(),
-                        "id:" => filter == id.to_string(),
+                        "mime:" => {
+                            filter == "*" || filter == mime.as_str()
+                        },
+                        "id:" => {
+                            filter == "*" || filter == id.to_string()
+                        },
                         other => {
-                            dbg!(other);
-                            return Err(())
+                            db.tags.map.get(other).map_or(false, |records| {
+                                records.contains(&id.to_string())
+                            })
                         }
                     };
                     Ok(result)
@@ -115,7 +179,7 @@ impl Vennbase {
             // Evaluate each record on every partition. MimeType doesnt matter
         for (mimetype, partition) in &self.partitions {
             for (uuid, _) in partition.iter_active_records() {
-                let matches = evaluate(&parsed_query, mimetype, uuid)
+                let matches = evaluate(self, &parsed_query, mimetype, uuid)
                     .map_err(|_| VennbaseError("Failed to evaluate".into()))?;
                 if matches {
                     matched_records.push(uuid);
@@ -174,6 +238,9 @@ impl Vennbase {
         for entry in dir {
             // Read the filename
             let filepath = entry?.path();
+            if filepath.is_dir() || filepath.file_name().unwrap() == ".map" {
+                continue;
+            }
             let mimetype = MimeType::from_base64_filename(filepath.file_name().unwrap())?;
             println!("Found partition: {:#?}", mimetype);
 
@@ -183,7 +250,20 @@ impl Vennbase {
             );
         }
 
-        Ok(Vennbase { path: path.into(), partitions })
+        let mut tags_map = {
+            let map_path = PathBuf::from(path).join(".map");
+            let file = File::open(map_path)?;
+            let reader = BufReader::new(file);
+            serde_json::from_reader::<_, InvertedIndexMap>(reader)?
+        };
+
+        tags_map.path = PathBuf::from(path).join(".map");
+
+        Ok(Vennbase {
+            path: path.into(),
+            partitions,
+            tags: tags_map,
+        })
     }
 
     /// Creates a new partition for the database with the given Mime Type.
