@@ -154,8 +154,6 @@ impl Vennbase {
                     // Due to the checks, `filter` and `name` must be valid strings at this point
                     let (filter_name, filter) = expression.split_at(colon_i + 1);
 
-                    println!("filter_name: {:#?}, filter: {:#?}", filter_name, filter);
-
                     let result = match filter_name {
                         "mime:" => {
                             filter == "*" || filter == mime.as_str()
