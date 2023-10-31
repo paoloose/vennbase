@@ -55,10 +55,19 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
                         writer.write_all(
                             format!("OK {}\n", records.len()).as_bytes()
                         )?;
-                        for record in records.iter() {
+                        for (mimetype, record_id) in records.iter() {
+                            let tags = db.get_tags_for_record(record_id);
                             writer.write_all(
-                                format!("{record:?}\n").as_bytes()
+                                format!(
+                                    "{record_id:?}\n{mimetype}\n{}\n",
+                                    tags.len()
+                                ).as_bytes()
                             )?;
+                            if !tags.is_empty() {
+                                writer.write_all(
+                                    format!("{}\n", tags.join(",")).as_bytes()
+                                )?;
+                            }
                         }
                         println!("{} record(s) queried.", records.len());
                     },
@@ -148,14 +157,28 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
             },
             "save" => {
                 let mimetype = header_iter.next().unwrap_or_default();
+                let n = match header_iter.next() {
+                    Some(n) => n.parse::<usize>().unwrap_or_default(),
+                    None => {
+                        write_to_socket!(stream, "No size provided\n")?;
+                        continue;
+                    },
+                };
                 match MimeType::from(mimetype) {
                     Ok(mimetype) => {
                         println!("Valid mimetype: {}", mimetype);
-                        let mut data = Vec::with_capacity(1024);
-                        reader.read_to_end(&mut data)?;
 
+                        let mut tags: Vec<String> = vec![];
+                        for _ in 0..n {
+                            let (tag, _) = read_string_until(&mut reader, b'\n', MAX_REQUEST_QUERY_LENGTH)?;
+                            tags.push(tag);
+                        }
+
+                        let mut data = Vec::with_capacity(1024);
                         let uuid = db.save_record(&mimetype, data.as_slice())?;
-                        write_to_socket!(stream, "{uuid}")?;
+                        reader.read_to_end(&mut data)?;
+                        write_to_socket!(stream, "{uuid}\n")?;
+
                         println!("Saving record {uuid} with len {:#?}", data.len());
                     },
                     Err(_) => {

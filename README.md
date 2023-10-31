@@ -16,17 +16,18 @@ alias venn="nc 127.0.0.1 1834 -qv"
 Request:
 
 ```plain
-save <content-type> [...<tags>]
-len: len
-age: 20
-purity: nsfw
+save <content-type> <n>
+<tag-1>
+<tag-2>
+...
+<tag-n>
 <binary-data>
 ```
 
 Response OK:
 
 ```plain
-<empty>
+<created-uuid>
 ```
 
 Response Error:

@@ -60,6 +60,15 @@ impl InvertedIndexMap {
         }
         self.flush_data().unwrap(); // FIXME: handle error
     }
+
+    pub fn get_tags_for_id(&self, record_id: &uuid::Uuid) -> Vec<&str> {
+        let record_id = record_id.to_string();
+        self.map
+            .iter()
+            .filter(|(_, records)| records.contains(&record_id))
+            .map(|(tag, _)| tag.as_str())
+            .collect()
+    }
 }
 
 /// A venbase database instance.
@@ -117,12 +126,12 @@ impl Vennbase {
         unimplemented!("Replacing record with id: {} with data: {:#?}", id, data.len());
     }
 
-    pub fn query_records(&self, query: &str) -> Result<Vec<&uuid::Uuid>, VennbaseError> {
+    pub fn query_records(&self, query: &str) -> Result<Vec<(&MimeType, &uuid::Uuid)>, VennbaseError> {
         let parsed_query = parse_query(query)
             .map_err(|_| VennbaseError("Invalid query".into()))?;
         // FIXME: this need to be optimized. maybe using the Shunting yard algorithm?
         // https://en.wikipedia.org/wiki/Shunting_yard_algorithm
-        let mut matched_records = Vec::<&uuid::Uuid>::with_capacity(4); // lucky number
+        let mut matched_records = Vec::<(&MimeType, &uuid::Uuid)>::with_capacity(4); // lucky number
 
         fn evaluate(db: &Vennbase, node: &ASTNode, mime: &MimeType, id: &uuid::Uuid) -> Result<bool, ()> {
             match node {
@@ -180,7 +189,7 @@ impl Vennbase {
                 let matches = evaluate(self, &parsed_query, mimetype, uuid)
                     .map_err(|_| VennbaseError("Failed to evaluate".into()))?;
                 if matches {
-                    matched_records.push(uuid);
+                    matched_records.push((mimetype, uuid));
                 }
             }
         }
@@ -227,6 +236,10 @@ impl Vennbase {
             }
         }
         Ok(None)
+    }
+
+    pub fn get_tags_for_record(&self, record_id: &uuid::Uuid) -> Vec<&str> {
+        self.tags.get_tags_for_id(record_id)
     }
 
     fn parse_dir_tree(path: &str) -> io::Result<Vennbase> {
