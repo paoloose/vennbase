@@ -175,10 +175,9 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
                         }
 
                         let mut data = Vec::with_capacity(1024);
-                        let uuid = db.save_record(&mimetype, data.as_slice())?;
                         reader.read_to_end(&mut data)?;
-                        write_to_socket!(stream, "{uuid}\n")?;
-
+                        let uuid = db.save_record(&mimetype, data.as_slice())?;
+                        write_to_socket!(stream, "{uuid}")?;
                         println!("Saving record {uuid} with len {:#?}", data.len());
                     },
                     Err(_) => {
