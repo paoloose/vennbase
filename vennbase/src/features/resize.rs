@@ -123,7 +123,7 @@ fn encode_image_with_format(image_buffer: &[u8], dims: (u32, u32), format: Image
     }
 }
 
-pub fn is_resizeable_format(mimetype: &MimeType) -> bool {
+pub fn is_resizable_format(mimetype: &MimeType) -> bool {
     match ImageFormat::from_mime_type(mimetype.as_str()) {
         Some(format) => matches!(format,
             ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::WebP | ImageFormat::Bmp

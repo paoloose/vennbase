@@ -58,9 +58,7 @@ impl<'a> VariablesPermutations<'a> {
                     //   [Fickle(a), Fickle(b), Fixed(true), Fickle(c)]
                     // this will generate the powers for the three fickle variables
                     //   [a: 4, b: 2, c: 1]
-                    let p = usize::pow(2, fickles.len() as u32 - i as u32 - 1);
-                    dbg!(p);
-                    p
+                    usize::pow(2, fickles.len() as u32 - i as u32 - 1)
                 }).collect(),
             max_i: usize::pow(2, fickles.len() as u32),
         }

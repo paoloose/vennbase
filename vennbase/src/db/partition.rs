@@ -13,7 +13,11 @@ pub struct RecordInformation {
     size: u64,
 }
 
-pub type BufferedRecord = io::Take<BufReader<File>>;
+#[derive(Debug)]
+pub enum StoredRecord {
+    InDiskRecord(io::Take<BufReader<File>>),
+    InMemoryRecord(Vec<u8>),
+}
 
 // Each partition contains multiple files of the same type
 #[derive(Debug)]
@@ -171,7 +175,7 @@ impl Partition {
         self.records.get(record_id)
     }
 
-    pub fn fetch_record(&self, record_id: &uuid::Uuid) -> io::Result<Option<BufferedRecord>> {
+    pub fn fetch_record(&self, record_id: &uuid::Uuid) -> io::Result<Option<io::Take<BufReader<File>>>> {
         match self.records.get(record_id) {
             Some(record_info) => {
                 let file = File::open(&self.file_path)?;
@@ -180,9 +184,7 @@ impl Partition {
                 reader.seek(SeekFrom::Start(record_info.start))?;
                 Ok(Some(reader.take(record_info.size)))
             },
-            None => {
-                Ok(None)
-            },
+            None => Ok(None),
         }
     }
 

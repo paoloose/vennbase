@@ -1,75 +1,17 @@
-use core::panic;
 use std::collections::HashMap;
-use std::fs::File;
+use core::panic;
+use std::fs::{self, File};
 use std::io::{self, prelude::*, BufWriter, BufReader};
-use std::fs;
 use std::path::PathBuf;
 
-use logic_parser::parsing::ASTNode;
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
-
-use crate::db::types::VennTimestamp;
-use crate::db::types::MimeType;
-use crate::db::partition::Partition;
+use crate::db::types::{VennTimestamp, MimeType};
+use crate::db::partition::{Partition, StoredRecord};
+use crate::features::fast_querying::InvertedIndexMap;
+use crate::features::resize::{Dimensions, is_resizable_format, resize_image};
 use crate::query::parse_query;
 
-use super::partition::BufferedRecord;
-
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize)]
-pub struct InvertedIndexMap {
-    #[serde_as(as = "Vec<(_, _)>")]
-    map: HashMap<String, Vec<String>>,
-    #[serde(skip)]
-    path: PathBuf,
-}
-
-impl InvertedIndexMap {
-    fn flush_data(&self) -> io::Result<()> {
-        let file = File::create(&self.path)?;
-        let mut writer = BufWriter::new(file);
-        let serialized_map = serde_json::to_string(&self).unwrap();
-        writer.write_all(serialized_map.as_bytes())?;
-        Ok(())
-    }
-
-    pub fn add_tag(&mut self, tag: &str, record_id: uuid::Uuid) {
-        let tag = tag.to_owned();
-        let record_id = record_id.to_string();
-        if self.map.contains_key(&tag) {
-            let records = self.map.get_mut(&tag).unwrap();
-            if !records.contains(&record_id) {
-                records.push(record_id);
-            }
-        }
-        else {
-            self.map.insert(tag, vec![record_id]);
-        }
-        self.flush_data().unwrap(); // FIXME: handle error
-    }
-
-    pub fn remove_tag(&mut self, tag: &str, record_id: uuid::Uuid) {
-        let tag = tag.to_owned();
-        let record_id = record_id.to_string();
-        if self.map.contains_key(&tag) {
-            let records = self.map.get_mut(&tag).unwrap();
-            if let Some(index) = records.iter().position(|r| r == &record_id) {
-                records.remove(index);
-            }
-        }
-        self.flush_data().unwrap(); // FIXME: handle error
-    }
-
-    pub fn get_tags_for_id(&self, record_id: &uuid::Uuid) -> Vec<&str> {
-        let record_id = record_id.to_string();
-        self.map
-            .iter()
-            .filter(|(_, records)| records.contains(&record_id))
-            .map(|(tag, _)| tag.as_str())
-            .collect()
-    }
-}
+use image::ImageFormat;
+use logic_parser::parsing::ASTNode;
 
 /// A venbase database instance.
 ///
@@ -85,11 +27,12 @@ pub struct Vennbase {
 pub struct VennbaseError(String);
 
 impl Vennbase {
+    /// Parses an existing vennbase database directory
     pub fn from_dir(path: &str) -> io::Result<Vennbase> {
         match fs::create_dir(path) {
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
                 let tree = Vennbase::parse_dir_tree(path).expect("Malformed database directory");
-                return Ok(tree);
+                Ok(tree)
             }
             Err(e) => panic!("Couldn't create database directory: {:#?}", e),
             Ok(_) => {
@@ -113,9 +56,18 @@ impl Vennbase {
     /// Saves a new record the database and returns its UUID.
     ///
     /// If the partition for the given mimetype doesn't exist, it will be created.
-    pub fn save_record(&mut self, mimetype: &MimeType, data: &[u8]) -> io::Result<uuid::Uuid> {
+    pub fn save_record(
+        &mut self,
+        mimetype: &MimeType, data: &[u8],
+        tags: Vec<String>
+    ) -> io::Result<uuid::Uuid> {
         let partition = self.get_mut_or_create_partition(mimetype)?;
-        partition.push_record(data)
+        partition.push_record(data).map(|uuid| {
+            for t in tags {
+                self.tags.add_tag(t.as_str(), uuid);
+            }
+            uuid
+        })
     }
 
     pub fn delete_record(&mut self, id: &str) {
@@ -170,10 +122,13 @@ impl Vennbase {
                         "id:" => {
                             filter == "*" || filter == id.to_string()
                         },
-                        other => {
-                            db.tags.map.get(other).map_or(false, |records| {
+                        "tag:" => {
+                            db.tags.map.get(filter).map_or(false, |records| {
                                 records.contains(&id.to_string())
                             })
+                        },
+                        _ => {
+                            return Err(());
                         }
                     };
                     Ok(result)
@@ -228,11 +183,44 @@ impl Vennbase {
 
     }
 
-    pub fn fetch_record_by_id(&self, record_id: &uuid::Uuid) -> io::Result<Option<(&MimeType, BufferedRecord)>> {
+    pub fn fetch_record_by_id(
+        &self,
+        record_id: &uuid::Uuid,
+        resize_dims: &Option<Dimensions>
+    ) -> io::Result<Option<(&MimeType, StoredRecord)>> {
         for (mimetype, partition) in &self.partitions {
-            let reader = partition.fetch_record(record_id)?;
-            if let Some(reader) = reader {
-                return Ok(Some((mimetype, reader)))
+            if let Some(mut record) = partition.fetch_record(record_id)? {
+                let size = record.limit();
+                // If we need to resize the image
+                if is_resizable_format(mimetype) && resize_dims.is_some() {
+                    let new_dimensions = resize_dims.as_ref().unwrap();
+                    // Load the entire image into memory
+                    let mut data = Vec::with_capacity(size as usize);
+                    record.read_to_end(&mut data)?;
+                    let resize_result = resize_image(
+                        &data,
+                        // MIMEtype should be valid at this point
+                        ImageFormat::from_mime_type(mimetype.as_str()).unwrap(),
+                        new_dimensions
+                    );
+                    let data = match resize_result {
+                        Ok(data) => data,
+                        Err(_) => {
+                            return Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "Failed to resize image"
+                            ));
+                        },
+                    };
+
+                    return Ok(
+                        Some((mimetype, StoredRecord::InMemoryRecord(data)))
+                    );
+                }
+                // Otherwise, send the image as it is
+                return Ok(
+                    Some((mimetype, StoredRecord::InDiskRecord(record)))
+                );
             }
         }
         Ok(None)
