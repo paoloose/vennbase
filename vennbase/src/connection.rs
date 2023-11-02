@@ -40,12 +40,14 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
 
         match method {
             "query" => {
-                let query = header_iter.next();
-                if query.is_none() {
-                    write_to_socket!(stream, "No query provided\n")?;
-                    continue;
-                }
-                match db.query_records(query.unwrap()) {
+                let query = match header_iter.next() {
+                    Some(query) => query,
+                    _ => {
+                        write_to_socket!(stream, "ERROR 0\n")?;
+                        continue;
+                    }
+                };
+                match db.query_records(query) {
                     Ok(records) => {
                         if records.is_empty() {
                             write_to_socket!(stream, "OK 0\n")?;
@@ -78,32 +80,23 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
                 }
             },
             "get" => {
-                let mut resize_dims: Option<Dimensions> = None;
-                let resize_str = match header_iter.next() {
-                    Some(resize) => resize,
-                    None => {
-                        write_to_socket!(stream, "No query provided\n")?;
+                let uuid = match header_iter.next().map(uuid::Uuid::from_str) {
+                    Some(Ok(id)) => id,
+                    _ => {
+                        write_to_socket!(stream, "ERROR 0\n")?;
                         continue;
-                    },
-                };
-                let id = match header_iter.next() {
-                    Some(id) => {
-                        // Just ignore invalid dimension specifiers
-                        if let Ok(dimensions) = Dimensions::from_dim_str(resize_str) {
-                            resize_dims = Some(dimensions);
-                        }
-                        id
-                    },
-                    None => resize_str
+                    }
                 };
 
-                let uuid = match uuid::Uuid::from_str(id) {
-                    Ok(id) => id,
-                    Err(_) => {
-                        write_to_socket!(stream, "Invalid UUID: '{}'\n", id)?;
+                let resize_dims: Option<Dimensions> = match header_iter.next().map(Dimensions::from_dim_str) {
+                    Some(Ok(dims)) => Some(dims),
+                    Some(Err(_)) => None, // Just ignore invalid dimension specifiers
+                    None => {
+                        write_to_socket!(stream, "ERROR 0\n");
                         continue;
                     },
                 };
+
                 // When we fetch a record, we get a Take<BufReader<File>>
                 match db.fetch_record_by_id(&uuid)? {
                     Some((mimetype, mut reader)) => {
@@ -156,35 +149,32 @@ pub fn handle_connection(stream: &TcpStream, db: &mut Vennbase) -> io::Result<()
                 }
             },
             "save" => {
-                let mimetype = header_iter.next().unwrap_or_default();
-                let n = match header_iter.next() {
-                    Some(n) => n.parse::<usize>().unwrap_or_default(),
-                    None => {
-                        write_to_socket!(stream, "No size provided\n")?;
+                let mimetype = match header_iter.next().map(MimeType::from) {
+                    Some(Ok(mimetype)) => mimetype,
+                    _ => {
+                        write_to_socket!(stream, "ERROR None\n")?;
+                        continue;
+                    }
+                };
+                let n = match header_iter.next().map(str::parse::<usize>) {
+                    Some(Ok(n)) => n,
+                    _ => {
+                        write_to_socket!(stream, "ERROR None\n")?;
                         continue;
                     },
                 };
-                match MimeType::from(mimetype) {
-                    Ok(mimetype) => {
-                        println!("Valid mimetype: {}", mimetype);
-
-                        let mut tags: Vec<String> = vec![];
-                        for _ in 0..n {
-                            let (tag, _) = read_string_until(&mut reader, b'\n', MAX_REQUEST_QUERY_LENGTH)?;
-                            tags.push(tag);
-                        }
-
-                        let mut data = Vec::with_capacity(1024);
-                        reader.read_to_end(&mut data)?;
-                        let uuid = db.save_record(&mimetype, data.as_slice())?;
-                        write_to_socket!(stream, "{uuid}")?;
-                        println!("Saving record {uuid} with len {:#?}", data.len());
-                    },
-                    Err(_) => {
-                        println!("Invalid mimetype: {}", mimetype);
-                        write_to_socket!(stream, "ERROR")?;
-                    },
+                let mut tags: Vec<String> = vec![];
+                for _ in 0..n {
+                    let (tag, _) = read_string_until(&mut reader, b'\n', MAX_REQUEST_QUERY_LENGTH)?;
+                    tags.push(tag);
                 }
+
+                let mut data = Vec::with_capacity(1024);
+                reader.read_to_end(&mut data)?;
+
+                let uuid = db.save_record(&mimetype, data.as_slice())?;
+                write_to_socket!(stream, "OK {uuid}\n")?;
+                println!("Saving record {uuid} with len {:#?}", data.len());
             },
             "del" => {
                 // TODO: read id

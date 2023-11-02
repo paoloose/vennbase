@@ -27,13 +27,13 @@ save <content-type> <n>
 Response OK:
 
 ```plain
-<created-uuid>
+OK <created-uuid>
 ```
 
 Response Error:
 
 ```plain
-ERROR
+ERROR None
 ```
 
 **Examples:**
@@ -96,7 +96,7 @@ venn <<< $'query skip=20 limit=10 (tag:'pink' || tag:'anime') && (mime:image/* |
 General request:
 
 ```plain
-get [<width|auto>x<height|auto>] <id>
+get <id> [<width|auto>x<height|auto>]
 ```
 
 Non-image types will ignore the `<width>x<height>` parameter.
