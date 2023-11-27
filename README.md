@@ -1,8 +1,15 @@
 # Vennbase
 
-A (**pretty much WIP**) disk-efficient multimedia database that partitions data by content type.
+A disk-efficient multimedia database that partitions data by content type.
 
-The following features are for documentation purpose, and they may not be implemented yet.
+Vennbase (named after John Venn, who introduced the Venn diagrams) is capable
+of storing large file blobs (like images, videos, documents)
+and arbitrary metadata that can be later queried like if you were using
+mathematical set notation!
+
+For an example of a real project integrating this database as a blob storage and
+serving content over the network see
+[paoloose/discmaths/assignments/project2](https://github.com/paoloose/discmaths/tree/main/assignments/project2).
 
 ## Querying the database
 
