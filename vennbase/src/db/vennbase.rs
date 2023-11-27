@@ -123,7 +123,7 @@ impl Vennbase {
                             filter == "*" || filter == id.to_string()
                         },
                         "tag:" => {
-                            db.tags.map.get(filter).map_or(false, |records| {
+                            filter == "*" || db.tags.map.get(filter).map_or(false, |records| {
                                 records.contains(&id.to_string())
                             })
                         },

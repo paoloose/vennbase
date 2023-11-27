@@ -16,12 +16,6 @@ pub fn parse_query(query: &str) -> logic_parser::parsing::Result<ASTNode> {
     parser.parse()
 }
 
-// FIXME: fix this on upstream for `logic-parser`
-// (mime:image/* && tag:anime) || (mime:video/* && !tag:anime)
-pub fn get_variables(_ast: &ASTNode) -> Vec<String> {
-    vec!["mime:image/*".into(), "tag:anime".into(), "mime:video/*".into(), "tag:anime".into()]
-}
-
 // This enum differentiates between fixed-value propositions and fickle ones
 pub enum PropositionType {
     Fixed(bool),
